@@ -6,7 +6,7 @@ function normalizeText(value) {
   return String(value ?? '');
 }
 
-export function textResponse(value, metadata) {
+export function textResponse(value, meta) {
   const response = {
     content: [
       {
@@ -16,16 +16,16 @@ export function textResponse(value, metadata) {
     ],
   };
 
-  if (metadata !== undefined) {
-    response.metadata = metadata;
+  if (meta !== undefined) {
+    response.meta = meta;
   }
 
   return response;
 }
 
-export function errorResponse(value, metadata) {
+export function errorResponse(value, meta) {
   return {
-    ...textResponse(value, metadata),
+    ...textResponse(value, meta),
     isError: true,
   };
 }
