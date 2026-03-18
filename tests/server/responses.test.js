@@ -13,6 +13,14 @@ const traceMeta = {
   traceId: 'trace-123',
 };
 
+const actionMeta = {
+  error_code: 'ACTION_NOT_VERIFIED',
+  retryable: true,
+  evidence: {
+    phase: 'verify',
+  },
+};
+
 test('errorResponse passes retry metadata through', () => {
   const response = errorResponse('ouch', retryMeta);
 
@@ -26,4 +34,13 @@ test('textResponse forwards metadata when provided', () => {
 
   assert.deepStrictEqual(response.meta, traceMeta);
   assert.strictEqual(response.content[0].text, 'hello world');
+});
+
+test('errorResponse surfaces action verification meta shape', () => {
+  const result = errorResponse('boom', actionMeta);
+
+  assert.strictEqual(result.isError, true);
+  assert.strictEqual(result.meta.error_code, 'ACTION_NOT_VERIFIED');
+  assert.strictEqual(result.meta.retryable, true);
+  assert.deepStrictEqual(result.meta.evidence, { phase: 'verify' });
 });
