@@ -180,3 +180,21 @@ export async function buildHintMap(page, registry = new Map(), counters = { B: 0
 
   return result.hints;
 }
+
+export function rebindHintCandidate(previous, nextHints) {
+  if (!previous) return null;
+  const candidates = nextHints.filter(
+    (hint) => hint.type === previous.type && hint.label === previous.label
+  );
+  if (candidates.length === 0) return null;
+
+  const distance = (hint) =>
+    Math.abs(hint.x - previous.x) + Math.abs(hint.y - previous.y);
+
+  return candidates.reduce((best, current) => {
+    if (!best) return current;
+    const bestDistance = distance(best);
+    const currentDistance = distance(current);
+    return currentDistance < bestDistance ? current : best;
+  }, null);
+}

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { getActivePage, navigateTo, getTabs, switchTab, newTab, closeTab } from '../layer1-bridge/chrome.js';
 import { callTool } from '../layer1-bridge/webmcp.js';
-import { buildHintMap } from '../layer2-perception/hints.js';
+import { buildHintMap, rebindHintCandidate } from '../layer2-perception/hints.js';
 import { clickByHintId, typeByHintId, scroll, watchElement, pressKey, hoverByHintId } from '../layer3-action/actions.js';
 import { errorResponse, imageResponse, textResponse } from './responses.js';
 import { describeMode, syncPageState } from './state.js';
@@ -12,6 +12,16 @@ const HIGH_RISK_KEYWORDS = [
   '发送', '提交', '删除', '支付', '确认', '清空', '注销', '退出', '解绑', '重置',
   'send', 'submit', 'delete', 'pay', 'confirm', 'clear', 'logout', 'unsubscribe', 'reset', 'remove',
 ];
+
+function createRebuildHints(page, state) {
+  return async (hintId) => {
+    const previousHint = state.hintMap.find((hint) => hint.id === hintId);
+    const hints = await buildHintMap(page, state.hintRegistry, state.hintCounters);
+    state.hintMap = hints;
+    if (!previousHint) return null;
+    return rebindHintCandidate(previousHint, hints);
+  };
+}
 
 export function registerTools(server, state) {
   server.registerTool(
@@ -175,7 +185,8 @@ export function registerTools(server, state) {
         }
 
         const urlBefore = page.url();
-        const result = await clickByHintId(page, normalizedHintId);
+        const rebuildHints = createRebuildHints(page, state);
+        const result = await clickByHintId(page, normalizedHintId, { rebuildHints });
         audit('click', `[${normalizedHintId}] "${result.label}"`);
         await syncPageState(page, state, { force: true });
 
@@ -201,7 +212,8 @@ export function registerTools(server, state) {
       try {
         const normalizedHintId = hint_id.toUpperCase();
         const urlBefore = page.url();
-        const result = await clickByHintId(page, normalizedHintId);
+        const rebuildHints = createRebuildHints(page, state);
+        const result = await clickByHintId(page, normalizedHintId, { rebuildHints });
         audit('confirm_click', `[${normalizedHintId}] "${result.label}"`);
         await syncPageState(page, state, { force: true });
 
@@ -231,7 +243,8 @@ export function registerTools(server, state) {
 
       try {
         const normalizedHintId = hint_id.toUpperCase();
-        await typeByHintId(page, normalizedHintId, text, press_enter);
+        const rebuildHints = createRebuildHints(page, state);
+        await typeByHintId(page, normalizedHintId, text, press_enter, { rebuildHints });
         audit('type', `[${normalizedHintId}] "${text.slice(0, 20)}${text.length > 20 ? '...' : ''}"`);
         await syncPageState(page, state, { force: true });
 
@@ -556,7 +569,8 @@ export function registerTools(server, state) {
     async ({ hint_id }) => {
       try {
         const page = await getActivePage();
-        const result = await hoverByHintId(page, hint_id.toUpperCase());
+        const rebuildHints = createRebuildHints(page, state);
+        const result = await hoverByHintId(page, hint_id.toUpperCase(), { rebuildHints });
         audit('hover', `[${hint_id.toUpperCase()}] "${result.label}"`);
         await syncPageState(page, state, { force: true });
         return textResponse(

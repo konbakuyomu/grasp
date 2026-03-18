@@ -69,10 +69,10 @@ export async function scroll(page, direction, amount = 600) {
  * @param {string} hintId
  * @returns {Promise<{ info: { tag: string, label: string }, el: import('playwright').ElementHandle }>}
  */
-async function locateElement(page, hintId) {
+async function locateElement(page, hintId, options = {}) {
   // 检查元素是否存在以及是否在视口内
-  const viewportCheck = await page.evaluate((id) => {
-    const el = document.querySelector(`[data-grasp-id="${id}"]`);
+  const evaluateHint = (id) => page.evaluate((targetId) => {
+    const el = document.querySelector(`[data-grasp-id="${targetId}"]`);
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     // 使用元素中心点判断是否在视口内，与下方滚动公式保持语义一致
@@ -93,6 +93,15 @@ async function locateElement(page, hintId) {
         '',
     };
   }, hintId);
+
+  let viewportCheck = await evaluateHint(hintId);
+  if (viewportCheck === null && typeof options.rebuildHints === 'function') {
+    const rebound = await options.rebuildHints(hintId);
+    if (rebound?.id && rebound.id !== hintId) {
+      hintId = rebound.id;
+      viewportCheck = await evaluateHint(hintId);
+    }
+  }
 
   if (viewportCheck === null) {
     throw new Error(`No element with hint ID "${hintId}". Call get_hint_map first.`);
@@ -127,8 +136,8 @@ async function locateElement(page, hintId) {
  * @param {string} hintId
  * @returns {Promise<{ tag: string, label: string }>}
  */
-export async function clickByHintId(page, hintId) {
-  const { info, el } = await locateElement(page, hintId);
+export async function clickByHintId(page, hintId, options = {}) {
+  const { info, el } = await locateElement(page, hintId, options);
 
   // 获取元素真实坐标
   const box = await el.boundingBox();
@@ -159,8 +168,8 @@ export async function clickByHintId(page, hintId) {
  * @param {string} text
  * @param {boolean} [pressEnter=false]
  */
-export async function typeByHintId(page, hintId, text, pressEnter = false) {
-  const { el } = await locateElement(page, hintId);
+export async function typeByHintId(page, hintId, text, pressEnter = false, options = {}) {
+  const { el } = await locateElement(page, hintId, options);
 
   // 三连击全选：优先用真实鼠标坐标事件，兼容 React 受控输入
   const box = await el.boundingBox();
@@ -290,8 +299,8 @@ export async function pressKey(page, key) {
  * @param {import('playwright').Page} page
  * @param {string} hintId
  */
-export async function hoverByHintId(page, hintId) {
-  const { info, el } = await locateElement(page, hintId);
+export async function hoverByHintId(page, hintId, options = {}) {
+  const { info, el } = await locateElement(page, hintId, options);
   await el.hover();
   // Allow hover-triggered animations/menus to settle
   await new Promise((r) => setTimeout(r, 200));
