@@ -16,10 +16,9 @@ const HIGH_RISK_KEYWORDS = [
 function createRebuildHints(page, state) {
   return async (hintId) => {
     const previousHint = state.hintMap.find((hint) => hint.id === hintId);
-    const hints = await buildHintMap(page, state.hintRegistry, state.hintCounters);
-    state.hintMap = hints;
+    await syncPageState(page, state, { force: true });
     if (!previousHint) return null;
-    return rebindHintCandidate(previousHint, hints);
+    return rebindHintCandidate(previousHint, state.hintMap);
   };
 }
 

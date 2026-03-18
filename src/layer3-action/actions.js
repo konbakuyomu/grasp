@@ -71,11 +71,10 @@ export async function scroll(page, direction, amount = 600) {
  */
 async function locateElement(page, hintId, options = {}) {
   // 检查元素是否存在以及是否在视口内
-  const evaluateHint = (id) => page.evaluate((targetId) => {
+  const defaultEvaluateHint = (id) => page.evaluate((targetId) => {
     const el = document.querySelector(`[data-grasp-id="${targetId}"]`);
     if (!el) return null;
     const rect = el.getBoundingClientRect();
-    // 使用元素中心点判断是否在视口内，与下方滚动公式保持语义一致
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
     const inView = (
@@ -92,15 +91,17 @@ async function locateElement(page, hintId, options = {}) {
         el.innerText?.trim() ||
         '',
     };
-  }, hintId);
+  }, id);
+
+  const evaluateHint = options.evaluateHint ?? defaultEvaluateHint;
 
   let viewportCheck = await evaluateHint(hintId);
   if (viewportCheck === null && typeof options.rebuildHints === 'function') {
     const rebound = await options.rebuildHints(hintId);
-    if (rebound?.id && rebound.id !== hintId) {
+    if (rebound?.id) {
       hintId = rebound.id;
-      viewportCheck = await evaluateHint(hintId);
     }
+    viewportCheck = await evaluateHint(hintId);
   }
 
   if (viewportCheck === null) {
@@ -306,3 +307,5 @@ export async function hoverByHintId(page, hintId, options = {}) {
   await new Promise((r) => setTimeout(r, 200));
   return info;
 }
+
+export { locateElement };
