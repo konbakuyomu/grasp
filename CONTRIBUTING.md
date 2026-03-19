@@ -143,4 +143,3 @@ Open an [Issue](https://github.com/Yuzc-001/grasp/issues) with:
 ## Questions
 
 - Feature discussion and bug reports: [Issues](https://github.com/Yuzc-001/grasp/issues)
-- Private or licensing questions: `zxyu24@outlook.com`

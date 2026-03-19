@@ -194,7 +194,6 @@ MIT — 见 [LICENSE](./LICENSE)。
 ## 联系
 
 - Issues：https://github.com/Yuzc-001/grasp/issues
-- 邮件：`zxyu24@outlook.com`
 
 ## Claude Code Skill
 
