@@ -16,6 +16,32 @@ function toGatewayPage({ title, url, pageState }, state) {
   };
 }
 
+function getGatewayStatus(state) {
+  const pageState = state.pageState ?? {};
+  const handoffState = state.handoff?.state ?? 'idle';
+  if (handoffState === 'handoff_required' || pageState.riskGateDetected || pageState.currentRole === 'checkpoint') {
+    return 'gated';
+  }
+  return 'direct';
+}
+
+function getGatewayContinuation(state, suggestedNextAction) {
+  const handoffState = state.handoff?.state ?? 'idle';
+  if (getGatewayStatus(state) === 'gated') {
+    return {
+      can_continue: false,
+      suggested_next_action: 'request_handoff',
+      handoff_state: handoffState,
+    };
+  }
+
+  return {
+    can_continue: true,
+    suggested_next_action: suggestedNextAction,
+    handoff_state: handoffState,
+  };
+}
+
 function buildGatewayOutcome(outcome) {
   const strategy = outcome.preflight?.recommended_entry_strategy ?? 'direct';
   const trust = outcome.preflight?.session_trust ?? 'medium';
@@ -85,17 +111,13 @@ export function registerGatewayTools(server, state, deps = {}) {
       await syncState(page, state, { force: true });
 
       return buildGatewayResponse({
-        status: 'inspect',
+        status: getGatewayStatus(state),
         page: toGatewayPage({
           title: await page.title(),
           url: page.url(),
           pageState: state.pageState,
         }, state),
-        continuation: {
-          can_continue: state.handoff?.state !== 'handoff_required',
-          suggested_next_action: 'extract',
-          handoff_state: state.handoff?.state ?? 'idle',
-        },
+        continuation: getGatewayContinuation(state, 'extract'),
       });
     }
   );
@@ -110,6 +132,7 @@ export function registerGatewayTools(server, state, deps = {}) {
     },
     async ({ include_markdown = false } = {}) => {
       const page = await getPage();
+      await syncState(page, state, { force: true });
       const result = await observeContent({
         page,
         deps: {
@@ -120,17 +143,14 @@ export function registerGatewayTools(server, state, deps = {}) {
       });
 
       return buildGatewayResponse({
-        status: 'extract',
+        status: getGatewayStatus(state),
         page: toGatewayPage({
           title: await page.title(),
           url: page.url(),
           pageState: state.pageState,
         }, state),
         result,
-        continuation: {
-          can_continue: true,
-          handoff_state: state.handoff?.state ?? 'idle',
-        },
+        continuation: getGatewayContinuation(state, 'inspect'),
       });
     }
   );

@@ -80,6 +80,7 @@ test('inspect returns current gateway page status without raw primitive wording'
   const inspect = calls.find((tool) => tool.name === 'inspect');
   const result = await inspect.handler();
 
+  assert.equal(result.meta.status, 'direct');
   assert.equal(result.meta.page.page_role, 'content');
   assert.equal(result.meta.continuation.suggested_next_action, 'extract');
   assert.doesNotMatch(result.content[0].text, /page_role|handoff_state|suggested_next_action/);
@@ -107,7 +108,47 @@ test('extract returns summary, main text, and markdown in one payload', async ()
   const extract = calls.find((tool) => tool.name === 'extract');
   const result = await extract.handler({ include_markdown: true });
 
+  assert.equal(result.meta.status, 'direct');
   assert.equal(result.meta.result.summary, 'Example summary');
   assert.equal(result.meta.result.main_text, 'Example summary. More body text.');
   assert.match(result.meta.result.markdown, /^# /);
+});
+
+test('inspect and extract mark checkpoint pages as gated with handoff guidance', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com/checkpoint',
+    title: () => 'Just a moment',
+  });
+  const state = {
+    pageState: { currentRole: 'checkpoint', graspConfidence: 'low', riskGateDetected: true },
+    handoff: { state: 'handoff_required' },
+  };
+
+  registerGatewayTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+    waitUntilStable: async () => ({ stable: true }),
+    extractMainContent: async () => ({ title: 'Just a moment', text: 'Please wait...' }),
+  });
+
+  const inspect = calls.find((tool) => tool.name === 'inspect');
+  const extract = calls.find((tool) => tool.name === 'extract');
+
+  const inspectResult = await inspect.handler();
+  const extractResult = await extract.handler();
+
+  assert.equal(inspectResult.meta.status, 'gated');
+  assert.equal(inspectResult.meta.continuation.can_continue, false);
+  assert.equal(inspectResult.meta.continuation.suggested_next_action, 'request_handoff');
+  assert.equal(inspectResult.meta.continuation.handoff_state, 'handoff_required');
+
+  assert.equal(extractResult.meta.status, 'gated');
+  assert.equal(extractResult.meta.continuation.can_continue, false);
+  assert.equal(extractResult.meta.continuation.suggested_next_action, 'request_handoff');
+  assert.equal(extractResult.meta.continuation.handoff_state, 'handoff_required');
 });
