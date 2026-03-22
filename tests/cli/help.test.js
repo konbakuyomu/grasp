@@ -5,6 +5,7 @@ import { renderHelpText } from '../../index.js';
 
 test('renderHelpText describes the gateway help', () => {
   assert.match(renderHelpText(), /AI browser gateway/i);
+  assert.match(renderHelpText(), /grasp\s+Start gateway setup/i);
 });
 
 test('index.js can be imported without auto-running the CLI', async () => {
