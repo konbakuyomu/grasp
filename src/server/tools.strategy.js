@@ -8,6 +8,44 @@ import { requestHandoff } from '../grasp/handoff/events.js';
 import { readHandoffState, writeHandoffState } from '../grasp/handoff/persist.js';
 import { buildCheckpointHandoffSuggestion, buildSessionTrustPreflight } from './continuity.js';
 
+export async function enterWithStrategy({ url, state, deps = {} }) {
+  const getActivePageFn = deps.getActivePage ?? getActivePage;
+  const navigateToFn = deps.navigateTo ?? navigateTo;
+  const syncState = deps.syncPageState ?? syncPageState;
+  const readHandoff = deps.readHandoffState ?? readHandoffState;
+  const auditFn = deps.audit ?? audit;
+  const auditName = deps.auditName ?? 'navigate_with_strategy';
+
+  const handoff = await readHandoff();
+  let pageState = state.pageState ?? {};
+
+  try {
+    const activePage = await getActivePageFn();
+    await syncState(activePage, state);
+    pageState = state.pageState ?? {};
+  } catch {
+    // allow strategy selection even before first active page is available
+  }
+
+  const preflight = buildSessionTrustPreflight(url, pageState, handoff);
+
+  if (preflight.recommended_entry_strategy === 'handoff_or_preheat') {
+    return { url, title: null, preflight, pageState, handoff };
+  }
+
+  const page = await navigateToFn(url);
+  await syncState(page, state, { force: true });
+  await auditFn(auditName, `${preflight.recommended_entry_strategy} :: ${url}`);
+
+  return {
+    url,
+    title: await page.title(),
+    preflight,
+    pageState: state.pageState ?? pageState,
+    handoff,
+  };
+}
+
 export function registerStrategyTools(server, state) {
   server.registerTool(
     'preheat_session',
@@ -47,17 +85,8 @@ export function registerStrategyTools(server, state) {
       },
     },
     async ({ url }) => {
-      const handoff = await readHandoffState();
-      let pageState = state.pageState ?? {};
-      try {
-        const activePage = await getActivePage();
-        await syncPageState(activePage, state);
-        pageState = state.pageState ?? {};
-      } catch {
-        // allow strategy selection even before first active page is available
-      }
-
-      const preflight = buildSessionTrustPreflight(url, pageState, handoff);
+      const outcome = await enterWithStrategy({ url, state });
+      const { preflight, handoff, pageState } = outcome;
 
       if (preflight.recommended_entry_strategy === 'handoff_or_preheat') {
         const checkpointSuggestion = pageState.currentRole === 'checkpoint'
@@ -73,10 +102,6 @@ export function registerStrategyTools(server, state) {
         ], { preflight, handoff, pageState, checkpointSuggestion });
       }
 
-      const page = await navigateTo(url);
-      await syncPageState(page, state, { force: true });
-      await audit('navigate_with_strategy', `${preflight.recommended_entry_strategy} :: ${url}`);
-
       const extra = preflight.recommended_entry_strategy === 'preheat_before_direct_entry'
         ? 'Preheat recommended: this host looks high-risk for a cold direct entry.'
         : 'Direct navigation accepted.';
@@ -85,7 +110,7 @@ export function registerStrategyTools(server, state) {
         `Navigation strategy: ${preflight.recommended_entry_strategy}`,
         `Session trust: ${preflight.session_trust}`,
         `Navigated to: ${url}`,
-        `Page title: ${await page.title()}`,
+        `Page title: ${outcome.title}`,
         extra,
       ], { preflight, pageState: state.pageState });
     }
