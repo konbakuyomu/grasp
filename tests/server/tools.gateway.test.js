@@ -21,7 +21,7 @@ test('entry returns a gateway response with strategy metadata', async () => {
   assert.equal(result.meta.status, 'direct');
   assert.equal(result.meta.page.url, 'https://example.com');
   assert.equal(result.meta.continuation.suggested_next_action, 'inspect');
-  assert.equal(receivedArgs.auditName, 'entry');
+  assert.equal(receivedArgs.deps.auditName, 'entry');
 });
 
 test('entry marks low-trust preheat outcomes as warmup', async () => {

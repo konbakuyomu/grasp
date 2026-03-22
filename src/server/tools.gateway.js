@@ -52,7 +52,7 @@ export function registerGatewayTools(server, state, deps = {}) {
       },
     },
     async ({ url }) => {
-      const outcome = await enter({ url, state, auditName: 'entry' });
+      const outcome = await enter({ url, state, deps: { auditName: 'entry' } });
       const gatewayOutcome = buildGatewayOutcome(outcome);
 
       return buildGatewayResponse({
