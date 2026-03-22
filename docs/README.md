@@ -1,58 +1,30 @@
 # Grasp Docs
 
-当前版本：`v0.4.0`
+Public docs for the Grasp gateway surface.
 
-这份目录入口只保留当前发布态最值得先看的文档。
-
----
-
-## 先看哪几份
-
-### 1. 产品定位
-- [grasp_作品诊断与定位收紧建议_v1.md](./grasp_作品诊断与定位收紧建议_v1.md)
-
-回答：
-- Grasp 到底是什么
-- 它为什么不是普通 browser automation skill
-- 它在 OpenClaw 体系里应该承担什么位置
-
-### 2. 当前实现里程碑
-- [grasp_v0.4_主干里程碑_v1.md](./grasp_v0.4_主干里程碑_v1.md)
-
-回答：
-- `v0.4` 当前已经真实做成了什么
-- 哪些能力已经进入主干
-- 哪些验证已经拿到真实证据
-- 下一阶段最值得推进什么
-
-### 3. 正式发布说明
-- [release-notes-v0.4.0.md](./release-notes-v0.4.0.md)
-
-回答：
-- `v0.4.0` 这个版本为什么成立
-- 这一版新增了什么
-- 这一版明确承诺什么、不承诺什么
+Current package release: `v0.4.0`
 
 ---
 
-## 当前 docs 发布面
+## Quickstart
 
-当前 docs 主目录只保留发布态文档：
+- [Project README](../README.md)
+- [中文 README](../README.zh-CN.md)
 
-- `README.md`
-- `grasp_作品诊断与定位收紧建议_v1.md`
-- `grasp_v0.4_主干里程碑_v1.md`
-- `release-notes-v0.4.0.md`
+## Product Overview
 
-其余历史设计、旧测试、旧版本材料已移出主目录，避免干扰当前版本叙事。
+- [AI Browser Gateway](./product/ai-browser-gateway.md)
 
----
+## Capabilities
 
-## 关于 archive
+- [MCP Tools](./reference/mcp-tools.md)
+- [Search benchmark notes](./benchmarks/search-benchmark.md)
 
-`docs/archive/` 中保留的是：
-- 较早阶段的设计依据
-- 中间测试记录
-- 旧版本历史材料
+## Reference
 
-这些内容用于追溯，不属于当前 `v0.4.0` 的主发布面。
+- [CHANGELOG](../CHANGELOG.md)
+- [CONTRIBUTING](../CONTRIBUTING.md)
+
+## Releases
+
+- [v0.4.0 release notes](./release-notes-v0.4.0.md)
