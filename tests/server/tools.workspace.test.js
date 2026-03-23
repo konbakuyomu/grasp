@@ -202,7 +202,7 @@ test('workspace_inspect does not suggest execute_action when blockers are visibl
   assert.equal(missingSendResult.meta.continuation.suggested_next_action, 'draft_action');
 });
 
-test('workspace action skeletons delegate on direct pages and short-circuit when gated', async () => {
+test('workspace action tools select live items directly while draft and execute still delegate', async () => {
   const directCalls = [];
   const directServer = { registerTool(name, spec, handler) { directCalls.push({ name, handler }); } };
   const directState = {
@@ -232,13 +232,15 @@ test('workspace action skeletons delegate on direct pages and short-circuit when
   const directResults = [];
   for (const toolName of ['select_live_item', 'draft_action', 'execute_action']) {
     const tool = directCalls.find((entry) => entry.name === toolName);
-    directResults.push(await tool.handler({}));
+    directResults.push(await tool.handler(toolName === 'select_live_item' ? { item: '李女士' } : {}));
   }
 
   assert.equal(directResults[0].meta.continuation.suggested_next_action, 'workspace_inspect');
   assert.equal(directResults[1].meta.continuation.suggested_next_action, 'workspace_inspect');
   assert.equal(directResults[2].meta.continuation.suggested_next_action, 'workspace_inspect');
-  assert.deepEqual(directResults.map((result) => result.meta.result.action.status), ['delegated', 'delegated', 'delegated']);
+  assert.deepEqual(directResults.map((result) => result.meta.result.action.status), ['selected', 'delegated', 'delegated']);
+  assert.equal(directResults[0].meta.result.selected_item.label, '李女士');
+  assert.equal(directResults[0].meta.result.active_item.label, '李女士');
   assert.deepEqual(directInvocations, ['select_live_item', 'draft_action', 'execute_action']);
 
   const blockedCalls = [];
@@ -269,7 +271,7 @@ test('workspace action skeletons delegate on direct pages and short-circuit when
 
   for (const toolName of ['select_live_item', 'draft_action', 'execute_action']) {
     const tool = blockedCalls.find((entry) => entry.name === toolName);
-    const result = await tool.handler({});
+    const result = await tool.handler(toolName === 'select_live_item' ? { item: '李女士' } : {});
 
     assert.equal(result.meta.status, 'handoff_required');
     assert.equal(result.meta.continuation.suggested_next_action, 'request_handoff');

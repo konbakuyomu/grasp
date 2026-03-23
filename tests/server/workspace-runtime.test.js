@@ -5,6 +5,7 @@ import {
   resolveComposer,
   createWorkspaceWriteEvidence,
   executeGuardedAction,
+  selectWorkspaceItem,
   selectItemByHint,
   draftIntoComposer,
   verifyActionOutcome,
@@ -241,6 +242,102 @@ test('selectItemByHint returns no_live_target when nothing matches', async () =>
 
   assert.equal(result.ok, false);
   assert.equal(result.unresolved.reason, 'no_live_target');
+});
+
+test('select_live_item writes selection intent and verifies the active item changed', async () => {
+  const actions = [];
+  const result = await selectWorkspaceItem(
+    {
+      snapshot: {
+        live_items: [
+          { label: '李女士', normalized_label: '李女士', hint_id: 'L1' },
+          { label: '胡女士', normalized_label: '胡女士', hint_id: 'L2' },
+        ],
+      },
+      selectItemByHint: async (item) => {
+        actions.push(item.label);
+        return { ok: true };
+      },
+      refreshSnapshot: async () => ({
+        live_items: [{ label: '李女士', normalized_label: '李女士', hint_id: 'L1', selected: true }],
+        active_item: { label: '李女士' },
+      }),
+    },
+    '李女士'
+  );
+
+  assert.deepEqual(actions, ['李女士']);
+  assert.equal(result.status, 'selected');
+  assert.equal(result.active_item.label, '李女士');
+});
+
+test('select_live_item returns ambiguous_item when multiple visible items match', async () => {
+  let clicked = false;
+  const result = await selectWorkspaceItem(
+    {
+      snapshot: {
+        live_items: [
+          { label: '李女士', normalized_label: '李女士', hint_id: 'L1' },
+          { label: '李女士', normalized_label: '李女士', hint_id: 'L2' },
+        ],
+      },
+      selectItemByHint: async () => {
+        clicked = true;
+        return { ok: true };
+      },
+    },
+    '李女士'
+  );
+
+  assert.equal(clicked, false);
+  assert.equal(result.status, 'unresolved');
+  assert.equal(result.unresolved.reason, 'ambiguous_item');
+  assert.equal(result.unresolved.recovery_hint, 'scroll_list');
+});
+
+test('select_live_item returns not_in_visible_window when the target is not visible', async () => {
+  let clicked = false;
+  const result = await selectWorkspaceItem(
+    {
+      snapshot: {
+        live_items: [{ label: '胡女士', normalized_label: '胡女士', hint_id: 'L2' }],
+      },
+      selectItemByHint: async () => {
+        clicked = true;
+        return { ok: true };
+      },
+    },
+    '李女士'
+  );
+
+  assert.equal(clicked, false);
+  assert.equal(result.status, 'unresolved');
+  assert.equal(result.unresolved.reason, 'not_in_visible_window');
+  assert.equal(result.unresolved.recovery_hint, 'scroll_list');
+});
+
+test('select_live_item returns detail_panel_mismatch when the refreshed detail panel disagrees', async () => {
+  const result = await selectWorkspaceItem(
+    {
+      snapshot: {
+        live_items: [
+          { label: '李女士', normalized_label: '李女士', hint_id: 'L1' },
+        ],
+      },
+      selectItemByHint: async () => ({ ok: true }),
+      refreshSnapshot: async () => ({
+        live_items: [{ label: '李女士', normalized_label: '李女士', hint_id: 'L1', selected: true }],
+        active_item: { label: '李女士' },
+        detail_alignment: 'mismatch',
+        selection_window: 'visible',
+      }),
+    },
+    '李女士'
+  );
+
+  assert.equal(result.status, 'unresolved');
+  assert.equal(result.unresolved.reason, 'detail_panel_mismatch');
+  assert.equal(result.unresolved.recovery_hint, 'reinspect_workspace');
 });
 
 test('selectItemByHint rejects the wrong same-label item when hint identity changes', async () => {

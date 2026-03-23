@@ -1,6 +1,6 @@
 import { ACTION_NOT_VERIFIED, LOADING_PENDING } from './error-codes.js';
 import { verifyGenericAction, verifyTypeResult } from './postconditions.js';
-import { classifyWorkspaceSurface, summarizeWorkspaceSnapshot } from './workspace-tasks.js';
+import { classifyWorkspaceSurface, getWorkspaceStatus, summarizeWorkspaceSnapshot } from './workspace-tasks.js';
 import { clickByHintId, typeByHintId } from '../layer3-action/actions.js';
 
 function compactText(value) {
@@ -47,6 +47,13 @@ function buildUnresolved(reason, requestedLabel, matches = []) {
   };
 }
 
+function buildSelectionUnresolved(reason, requestedLabel, matches = [], recoveryHint = null) {
+  return {
+    ...buildUnresolved(reason, requestedLabel, matches),
+    recovery_hint: recoveryHint,
+  };
+}
+
 function normalizeWorkspaceSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') {
     return snapshot;
@@ -65,6 +72,95 @@ function normalizeWorkspaceSnapshot(snapshot) {
 
 function buildUnsupportedWorkspace(requestedLabel) {
   return buildUnresolved('unsupported_workspace', requestedLabel);
+}
+
+function getSelectionMatchLabel(item) {
+  return normalizeLabel(item?.normalized_label ?? item?.label);
+}
+
+function getSelectionSnapshotDetails(snapshot) {
+  const summary = summarizeWorkspaceSnapshot(snapshot ?? {});
+  const activeItem = pick(snapshot, 'activeItem', 'active_item', null)
+    ?? (summary.active_item_label ? { label: summary.active_item_label } : null);
+  const detailAlignment = pick(snapshot, 'detailAlignment', 'detail_alignment', summary.detail_alignment);
+  const selectionWindow = pick(snapshot, 'selectionWindow', 'selection_window', summary.selection_window);
+
+  return {
+    summary,
+    activeItem,
+    detailAlignment,
+    selectionWindow,
+  };
+}
+
+function resolveWorkspaceSelection(snapshot, requestedLabel) {
+  if (isLoadingShell(snapshot)) {
+    return {
+      item: null,
+      matches: [],
+      unresolved: buildSelectionUnresolved('loading_shell', requestedLabel, [], 'reinspect_workspace'),
+    };
+  }
+
+  const liveItems = getLiveItems(snapshot);
+  const normalized = normalizeLabel(requestedLabel);
+  const matches = liveItems.filter((item) => getSelectionMatchLabel(item) === normalized);
+
+  if (matches.length > 1) {
+    return {
+      item: null,
+      matches,
+      unresolved: buildSelectionUnresolved('ambiguous_item', requestedLabel, matches, 'scroll_list'),
+    };
+  }
+
+  if (matches.length === 0) {
+    return {
+      item: null,
+      matches: [],
+      unresolved: buildSelectionUnresolved(
+        'not_in_visible_window',
+        requestedLabel,
+        [],
+        liveItems.length > 0 ? 'scroll_list' : 'reinspect_workspace',
+      ),
+    };
+  }
+
+  return {
+    item: matches[0],
+    matches,
+  };
+}
+
+function buildSelectionEvidence({
+  requestedLabel,
+  item,
+  summary,
+  activeItem,
+  detailAlignment,
+  selectionWindow,
+  recoveryHint,
+  matches = [],
+}) {
+  return {
+    requested_label: compactText(requestedLabel),
+    selected_item: item ? {
+      label: item.label ?? null,
+      hint_id: item.hint_id ?? null,
+      selected: item.selected === true,
+    } : null,
+    active_item: activeItem ? {
+      label: activeItem.label ?? null,
+      hint_id: activeItem.hint_id ?? null,
+      selected: activeItem.selected === true,
+    } : null,
+    detail_alignment: detailAlignment,
+    selection_window: selectionWindow,
+    recovery_hint: recoveryHint ?? null,
+    match_count: matches.length,
+    summary: summary.summary,
+  };
 }
 
 export function resolveLiveItem(snapshot, requestedLabel) {
@@ -400,6 +496,198 @@ export async function selectItemByHint(runtime, requestedLabel, options = {}) {
       identitySensitive: resolution.identity_sensitive ?? false,
     });
   });
+}
+
+export async function selectWorkspaceItem(runtime, requestedLabel) {
+  const state = runtime?.state ?? null;
+  if (getWorkspaceStatus(state ?? {}) !== 'direct') {
+    const snapshot = normalizeWorkspaceSnapshot(runtime?.snapshot ?? runtime ?? {});
+    const details = getSelectionSnapshotDetails(snapshot);
+
+    return {
+      status: 'blocked',
+      reason: getWorkspaceStatus(state ?? {}),
+      selected_item: null,
+      active_item: details.activeItem,
+      detail_alignment: details.detailAlignment,
+      snapshot,
+      selection_evidence: buildSelectionEvidence({
+        requestedLabel,
+        item: null,
+        summary: details.summary,
+        activeItem: details.activeItem,
+        detailAlignment: details.detailAlignment,
+        selectionWindow: details.selectionWindow,
+        recoveryHint: 'reinspect_workspace',
+        matches: [],
+      }),
+    };
+  }
+
+  const initialSnapshot = normalizeWorkspaceSnapshot(runtime?.snapshot ?? runtime ?? {});
+  const resolution = resolveWorkspaceSelection(initialSnapshot, requestedLabel);
+
+  if (!resolution.item) {
+    const details = getSelectionSnapshotDetails(initialSnapshot);
+    return {
+      status: 'unresolved',
+      unresolved: resolution.unresolved,
+      selected_item: null,
+      active_item: details.activeItem,
+      detail_alignment: details.detailAlignment,
+      snapshot: initialSnapshot,
+      selection_evidence: buildSelectionEvidence({
+        requestedLabel,
+        item: null,
+        summary: details.summary,
+        activeItem: details.activeItem,
+        detailAlignment: details.detailAlignment,
+        selectionWindow: details.selectionWindow,
+        recoveryHint: resolution.unresolved?.recovery_hint ?? null,
+        matches: resolution.matches ?? [],
+      }),
+    };
+  }
+
+  const item = resolution.item;
+  const selectItem = typeof runtime?.selectItemByHint === 'function'
+    ? runtime.selectItemByHint
+    : typeof runtime?.clickByHintId === 'function' && compactText(item?.hint_id)
+      ? async (candidate) => {
+          const page = runtime?.page ?? runtime;
+          await runtime.clickByHintId(page, candidate.hint_id, { rebuildHints: runtime?.rebuildHints });
+          return { ok: true };
+        }
+      : null;
+
+  if (typeof selectItem !== 'function') {
+    const details = getSelectionSnapshotDetails(initialSnapshot);
+    return {
+      status: 'unresolved',
+      unresolved: buildSelectionUnresolved('no_live_target', requestedLabel, [item], 'retry_selection'),
+      selected_item: item,
+      active_item: details.activeItem,
+      detail_alignment: details.detailAlignment,
+      snapshot: initialSnapshot,
+      selection_evidence: buildSelectionEvidence({
+        requestedLabel,
+        item,
+        summary: details.summary,
+        activeItem: details.activeItem,
+        detailAlignment: details.detailAlignment,
+        selectionWindow: details.selectionWindow,
+        recoveryHint: 'retry_selection',
+        matches: resolution.matches ?? [item],
+      }),
+    };
+  }
+
+  const executionResult = await selectItem(item);
+  if (executionResult && executionResult.ok === false) {
+    const details = getSelectionSnapshotDetails(initialSnapshot);
+    return {
+      status: 'unresolved',
+      unresolved: executionResult.unresolved ?? buildSelectionUnresolved('retry_selection', requestedLabel, [item], 'retry_selection'),
+      selected_item: item,
+      active_item: details.activeItem,
+      detail_alignment: details.detailAlignment,
+      snapshot: initialSnapshot,
+      selection_evidence: buildSelectionEvidence({
+        requestedLabel,
+        item,
+        summary: details.summary,
+        activeItem: details.activeItem,
+        detailAlignment: details.detailAlignment,
+        selectionWindow: details.selectionWindow,
+        recoveryHint: executionResult.unresolved?.recovery_hint ?? 'retry_selection',
+        matches: resolution.matches ?? [item],
+      }),
+    };
+  }
+
+  const refreshedSnapshot = normalizeWorkspaceSnapshot(
+    typeof runtime?.refreshSnapshot === 'function'
+      ? await runtime.refreshSnapshot()
+      : runtime?.snapshot ?? runtime ?? {},
+  );
+
+  if (typeof runtime?.persistSnapshot === 'function') {
+    await runtime.persistSnapshot(refreshedSnapshot);
+  }
+
+  if (runtime && typeof runtime === 'object') {
+    runtime.snapshot = refreshedSnapshot;
+  }
+
+  const refreshedDetails = getSelectionSnapshotDetails(refreshedSnapshot);
+  const refreshedLiveItems = getLiveItems(refreshedSnapshot);
+  const normalizedLabel = normalizeLabel(requestedLabel);
+  const activeMatch = normalizeLabel(refreshedDetails.activeItem?.label) === normalizedLabel;
+  const selectedMatch = refreshedLiveItems.some((liveItem) => (
+    liveItem?.selected === true
+    && getSelectionMatchLabel(liveItem) === normalizedLabel
+  ));
+  const detailAlignment = refreshedDetails.detailAlignment;
+
+  if (detailAlignment === 'mismatch') {
+    return {
+      status: 'unresolved',
+      unresolved: buildSelectionUnresolved('detail_panel_mismatch', requestedLabel, [item], 'reinspect_workspace'),
+      selected_item: item,
+      active_item: refreshedDetails.activeItem,
+      detail_alignment: detailAlignment,
+      snapshot: refreshedSnapshot,
+      selection_evidence: buildSelectionEvidence({
+        requestedLabel,
+        item,
+        summary: refreshedDetails.summary,
+        activeItem: refreshedDetails.activeItem,
+        detailAlignment,
+        selectionWindow: refreshedDetails.selectionWindow,
+        recoveryHint: 'reinspect_workspace',
+        matches: resolution.matches ?? [item],
+      }),
+    };
+  }
+
+  if (activeMatch || selectedMatch) {
+    return {
+      status: 'selected',
+      selected_item: item,
+      active_item: refreshedDetails.activeItem,
+      detail_alignment: detailAlignment,
+      snapshot: refreshedSnapshot,
+      selection_evidence: buildSelectionEvidence({
+        requestedLabel,
+        item,
+        summary: refreshedDetails.summary,
+        activeItem: refreshedDetails.activeItem,
+        detailAlignment,
+        selectionWindow: refreshedDetails.selectionWindow,
+        recoveryHint: refreshedDetails.summary.recovery_hint ?? null,
+        matches: resolution.matches ?? [item],
+      }),
+    };
+  }
+
+  return {
+    status: 'unresolved',
+    unresolved: buildSelectionUnresolved('virtualized_window_changed', requestedLabel, [item], 'retry_selection'),
+    selected_item: item,
+    active_item: refreshedDetails.activeItem,
+    detail_alignment: detailAlignment,
+    snapshot: refreshedSnapshot,
+    selection_evidence: buildSelectionEvidence({
+      requestedLabel,
+      item,
+      summary: refreshedDetails.summary,
+      activeItem: refreshedDetails.activeItem,
+      detailAlignment,
+      selectionWindow: refreshedDetails.selectionWindow,
+      recoveryHint: 'retry_selection',
+      matches: resolution.matches ?? [item],
+    }),
+  };
 }
 
 export async function draftIntoComposer(runtime, text, options = {}) {

@@ -1,7 +1,11 @@
+import { z } from 'zod';
+
 import { buildGatewayResponse } from './gateway-response.js';
 import { getActivePage } from '../layer1-bridge/chrome.js';
+import { clickByHintId } from '../layer3-action/actions.js';
 import { syncPageState } from './state.js';
 import { collectVisibleWorkspaceSnapshot, getWorkspaceContinuation, getWorkspaceStatus, summarizeWorkspaceSnapshot } from './workspace-tasks.js';
+import { selectWorkspaceItem } from './workspace-runtime.js';
 
 function toGatewayPage(page, state) {
   return {
@@ -182,6 +186,13 @@ function buildWorkspaceSnapshotView(snapshot) {
   };
 }
 
+function createWorkspaceRebuildHints(page, state, syncState) {
+  return async () => {
+    await syncState(page, state, { force: true });
+    return null;
+  };
+}
+
 async function loadWorkspacePageContext(page, state, syncState, collectSnapshot) {
   await syncState(page, state, { force: true });
   const snapshot = await collectSnapshot(page, state);
@@ -284,7 +295,114 @@ export function registerWorkspaceTools(server, state, deps = {}) {
     }
   );
 
-  registerWorkspaceActionTool(server, state, deps, 'select_live_item', 'select_live_item');
+  server.registerTool(
+    'select_live_item',
+    {
+      description: 'Select a visible workspace item by label and return the refreshed workspace snapshot.',
+      inputSchema: {
+        item: z.string().describe('Visible item label to select in the current workspace'),
+      },
+    },
+    async ({ item }) => {
+      const page = await getPage();
+      const { pageInfo, snapshot, workspace, workspaceSummary, workspaceSurface } = await loadWorkspacePageContext(page, state, syncState, collectSnapshot);
+      const status = getWorkspaceStatus(state);
+
+      if (status !== 'direct') {
+        return buildGatewayResponse({
+          status,
+          page: toGatewayPage(pageInfo, state),
+          result: {
+            task_kind: 'workspace',
+            action: {
+              kind: 'select_live_item',
+              status: 'blocked',
+            },
+            workspace,
+            summary: `Workspace ${workspaceSurface} • ${workspaceSummary.active_item_label ?? 'no active item'}`,
+          },
+          continuation: getWorkspaceContinuation(state, 'workspace_inspect'),
+          evidence: {
+            workspace_surface: workspaceSurface,
+            active_item_label: workspaceSummary.active_item_label ?? null,
+            loading_shell: workspaceSummary.loading_shell ?? false,
+            blocking_modal_count: workspaceSummary.blocking_modal_count ?? 0,
+          },
+        });
+      }
+
+      const rebuildHints = createWorkspaceRebuildHints(page, state, syncState);
+      const selection = await selectWorkspaceItem({
+        state,
+        page,
+        snapshot,
+        refreshSnapshot: async () => {
+          await syncState(page, state, { force: true });
+          return collectSnapshot(page, state);
+        },
+        selectItemByHint: async (candidate) => {
+          if (typeof deps.selectLiveItem === 'function') {
+            return deps.selectLiveItem({
+              page,
+              item: candidate,
+              snapshot,
+              workspace,
+              workspaceSummary,
+              workspaceSurface,
+            });
+          }
+
+          if (!candidate?.hint_id) {
+            return {
+              ok: false,
+              unresolved: {
+                reason: 'no_live_target',
+                requested_label: item,
+                matches: [],
+                recovery_hint: 'retry_selection',
+              },
+            };
+          }
+
+          await clickByHintId(page, candidate.hint_id, { rebuildHints });
+          return { ok: true };
+        },
+      }, item);
+      const refreshedSnapshot = selection.snapshot ?? snapshot;
+      const refreshedView = buildWorkspaceSnapshotView(refreshedSnapshot);
+      const pageInfoAfter = {
+        title: await page.title(),
+        url: page.url(),
+      };
+
+      return buildGatewayResponse({
+        status,
+        page: toGatewayPage(pageInfoAfter, state),
+        result: {
+          task_kind: 'workspace',
+          action: {
+            kind: 'select_live_item',
+            status: selection.status,
+          },
+          selected_item: selection.selected_item,
+          active_item: selection.active_item,
+          detail_alignment: selection.detail_alignment,
+          workspace: refreshedView.workspace,
+          snapshot: refreshedSnapshot,
+          selection_evidence: selection.selection_evidence,
+          summary: `Workspace ${refreshedView.workspaceSurface} • ${selection.active_item?.label ?? selection.selected_item?.label ?? refreshedView.workspaceSummary.active_item_label ?? 'no active item'}`,
+        },
+        continuation: getWorkspaceContinuation(state, 'workspace_inspect'),
+        evidence: {
+          workspace_surface: refreshedView.workspaceSurface,
+          active_item_label: selection.active_item?.label ?? refreshedView.workspaceSummary.active_item_label ?? null,
+          loading_shell: refreshedView.workspaceSummary.loading_shell ?? false,
+          blocking_modal_count: refreshedView.workspaceSummary.blocking_modal_count ?? 0,
+          selection_evidence: selection.selection_evidence,
+        },
+      });
+    }
+  );
   registerWorkspaceActionTool(server, state, deps, 'draft_action', 'draft_action');
   registerWorkspaceActionTool(server, state, deps, 'execute_action', 'execute_action');
 }
