@@ -4,7 +4,9 @@ export function createPageGraspState() {
     domRevision: 0,
     lastSnapshotHash: null,
     pageIdentity: null,
-    currentRole: 'unknown', // unknown | content | form | auth | docs | search | navigation-heavy | checkpoint
+    currentRole: 'unknown', // unknown | content | form | auth | docs | search | workspace | navigation-heavy | checkpoint
+    workspaceSurface: null, // null | list | detail | thread | composer | loading_shell
+    workspaceSignals: [],
     graspConfidence: 'unknown', // unknown | low | medium | high
     reacquired: false,
     riskGateDetected: false,
@@ -70,24 +72,121 @@ function classifySuggestedNextAction({ riskGateDetected, checkpointKind, nodes =
   return 'handoff_required';
 }
 
+function getUrlPath(url) {
+  try {
+    return new URL(url).pathname.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+function getUrlPathSegments(url) {
+  return getUrlPath(url).split('/').filter(Boolean);
+}
+
+function hasWorkspacePathEvidence(url) {
+  const segments = getUrlPathSegments(url);
+  const workspaceSegments = ['chat', 'thread', 'conversation', 'inbox', 'message', 'messages', 'msg'];
+  return segments.some((segment) => workspaceSegments.includes(segment));
+}
+
+function detectWorkspaceSignals({ url, title = '', bodyText = '', headings = [] }) {
+  const text = bodyText.toLowerCase();
+  const signals = [];
+
+  if (hasWorkspacePathEvidence(url)) {
+    signals.push('workspace_path');
+  }
+  if (text.includes('按enter键发送')) {
+    signals.push('workspace_composer_text');
+  }
+  if (text.includes('发消息')) {
+    signals.push('workspace_composer_text');
+  }
+  if (text.includes('发送消息')) {
+    signals.push('workspace_composer_text');
+  }
+  if (text.includes('输入消息')) {
+    signals.push('workspace_composer_text');
+  }
+  if (text.includes('消息') || text.includes('聊天') || text.includes('对话')) {
+    signals.push('workspace_thread_text');
+  }
+
+  return [...new Set(signals)];
+}
+
+function scoreWorkspaceSurface({ url, bodyText = '' }) {
+  const text = bodyText.toLowerCase();
+  let threadScore = hasWorkspacePathEvidence(url) ? 2 : 0;
+  let composerScore = 0;
+  let loadingScore = 0;
+
+  if (text.includes('按enter键发送')) {
+    composerScore += 3;
+  }
+  if (text.includes('发消息')) {
+    composerScore += 3;
+  }
+  if (text.includes('发送消息')) {
+    composerScore += 3;
+  }
+  if (text.includes('输入消息')) {
+    composerScore += 3;
+  }
+  if (text.includes('消息')) {
+    threadScore += 1;
+  }
+  if (text.includes('聊天') || text.includes('对话')) {
+    threadScore += 1;
+  }
+  if (text.includes('加载中，请稍候')) {
+    loadingScore += 2;
+  }
+
+  return { threadScore, composerScore, loadingScore };
+}
+
+function classifyWorkspaceSurface(scores = {}) {
+  const { threadScore = 0, composerScore = 0, loadingScore = 0 } = scores;
+
+  if (loadingScore > 0) {
+    return 'loading_shell';
+  }
+  if (composerScore >= 3 && composerScore > threadScore) {
+    return 'composer';
+  }
+  if (threadScore >= 2) {
+    return 'thread';
+  }
+  return null;
+}
+
+function classifyWorkspaceRole({ url, bodyText = '', headings = [] }) {
+  if (!hasWorkspacePathEvidence(url)) {
+    return null;
+  }
+  const scores = scoreWorkspaceSurface({ url, bodyText, headings });
+  return Math.max(scores.threadScore, scores.composerScore) >= 2 ? scores : null;
+}
+
 function classifyPageRole({ url, title = '', bodyText = '', nodes = 0, forms = 0, navs = 0, headings = [] }) {
   const text = bodyText.toLowerCase();
-  const path = (() => {
-    try {
-      return new URL(url).pathname.toLowerCase();
-    } catch {
-      return url.toLowerCase();
-    }
-  })();
+  const path = getUrlPath(url);
 
   const loginHints = ['sign in', 'log in', 'login', 'password', 'username', 'email address'];
   const searchHints = ['search results', 'no results', 'filter results'];
   const formHints = ['submit', 'required', 'email', 'message'];
   const headingText = headings.join(' ').toLowerCase();
   const checkpointSignals = detectCheckpointSignals({ url, title, bodyText, headings, nodes });
+  const workspaceScores = classifyWorkspaceRole({ url, bodyText, headings });
 
   if (checkpointSignals.length > 0) {
     return 'checkpoint';
+  }
+
+  if (workspaceScores) {
+    return 'workspace';
   }
 
   if (loginHints.some((hint) => text.includes(hint)) || /\/login\b|\/signin\b/.test(path)) {
@@ -153,7 +252,9 @@ export function applySnapshotToPageGraspState(
     checkpointKind: next.checkpointKind,
     nodes,
   });
+  next.workspaceSignals = detectWorkspaceSignals({ url, title, bodyText, headings });
   next.currentRole = classifyPageRole({ url, title, bodyText, nodes, forms, navs, headings });
+  next.workspaceSurface = next.currentRole === 'workspace' ? classifyWorkspaceSurface(scoreWorkspaceSurface({ url, bodyText })) : null;
   next.graspConfidence = classifyConfidence({ bodyText, nodes, urlChanged, domRevisionChanged });
 
   return next;

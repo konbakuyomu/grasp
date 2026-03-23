@@ -1,11 +1,20 @@
 {
   "name": "grasp",
-  "version": "0.4.0",
-  "description": "Give AI its own browser. A local MCP server for full Chrome control via CDP.",
+  "version": "0.5.2",
+  "description": "AI browser gateway with persistent sessions, verified actions, and recoverable handoff.",
   "main": "index.js",
   "bin": {
     "grasp": "./index.js"
   },
+  "files": [
+    "index.js",
+    "src",
+    "examples",
+    "scripts",
+    "skill",
+    "start-chrome.bat",
+    "grasp.skill"
+  ],
   "type": "module",
   "scripts": {
     "start": "node index.js",
@@ -20,10 +29,10 @@
   },
   "keywords": [
     "mcp",
-    "browser-automation",
-    "ai-agent",
-    "cdp",
-    "webmcp"
+    "ai-browser-gateway",
+    "browser-runtime",
+    "session-continuity",
+    "agent-browser"
   ],
   "repository": {
     "type": "git",

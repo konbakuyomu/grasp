@@ -2,102 +2,64 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [GitHub](https://github.com/Yuzc-001/grasp) · [Issues](https://github.com/Yuzc-001/grasp/issues)
 
-[![Version](https://img.shields.io/badge/version-v0.4.0-0B1738?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.5.2-0B1738?style=flat-square)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-23C993?style=flat-square)](./LICENSE)
-[![Validated](https://img.shields.io/badge/validated-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-5B6CFF?style=flat-square)](./README.zh-CN.md#安装)
+[![Validated](https://img.shields.io/badge/validated-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-5B6CFF?style=flat-square)](./README.zh-CN.md#快速开始)
 [![npm](https://img.shields.io/badge/npm-grasp-CB3837?style=flat-square)](https://www.npmjs.com/package/grasp)
 
-> **给 AI 一个专属浏览器运行时。**
->
-> 持久状态、可验证动作、可恢复的人机接力——全部运行在你的机器上、你的 Chrome profile 里。
+> **Grasp 是一个 AI 浏览网关：它能进入网页、读取内容、执行操作、发起接力，并带着证据恢复真实网页任务。**
 
-Grasp 是一个开源 MCP 浏览器运行时，面向 AI agent。它完全本地运行，连接专属的 `chrome-grasp` profile，给 agent 的不只是浏览器控制能力，而是浏览器连续性：页面 grasp、动作验证、handoff 持久化，以及人工介入后的恢复能力。
+Grasp 完全本地运行，使用专属的 `chrome-grasp` 浏览器配置目录，让智能体拥有可以复用的浏览器会话，而不是每次都从空白标签页重新开始。
 
-**当前版本：** `v0.4.0`
-
-**发布文档：**
-- [Release Notes](./docs/release-notes-v0.4.0.md)
-- [实现里程碑](./docs/grasp_v0.4_主干里程碑_v1.md)
-- [作品定位](./docs/grasp_作品诊断与定位收紧建议_v1.md)
+当前包版本：`v0.5.2`  
+对外文档入口：[docs/README.md](./docs/README.md)
 
 ---
 
-## v0.4 有什么不同
+## 为什么重要
 
-`v0.4` 不是“又多了一些浏览器工具”。
-它是 Grasp 从“浏览器 wrapper”开始走向“浏览器 runtime”的节点。
+很多浏览器自动化真正断掉的地方，不是在“不会点”，而是在登录之后、风控出现之后，或者人工介入一次之后就再也接不上。
 
-### v0.4 主干能力
-- **Runtime Truth** —— 浏览器 / 运行时状态被统一收敛到一个 truth layer
-- **Page Grasp** —— Grasp 开始跟踪页面角色、grasp 信心、页面身份和 reacquisition 状态
-- **Verified actions** —— `click` / `type` 不再只是盲成功，而会返回结构化 evidence
-- **Recoverable handoff** —— 需要人工介入的步骤可以被请求、持久化，并在跨调用后恢复
-- **Task continuation anchors** —— resume 可以校验期望 URL、页面角色、选择器是否匹配
-- **False-verified defense** —— 当页面回来了但任务没接上时，Grasp 会拒绝误判为 verified
+Grasp 要解决的是这些真实流程里的连续性问题：
 
-### v0.4 明确承诺什么
-- agent 可以拥有自己的持久浏览器 profile
-- agent 可以基于紧凑的语义页面视图进行推理
-- agent 可以验证动作是否真的产生了可观察变化
-- agent 可以跨调用经历 handoff / resume
-- agent 可以在 continuation anchors 不匹配时拒绝错误恢复
+- 持久浏览器会话，而不是一次性标签页
+- 可验证动作，而不是盲点成功
+- 紧凑页面理解，而不是直接塞原始 HTML
+- 可恢复接力，而不是人工介入后整段重来
 
-### v0.4 不承诺什么
-- 对所有高风控 / 强验证环境的通用绕过
-- 对所有登录或验证码流程的全自动完成
-- 对所有多步工作流的完整任务语义恢复
+当前主线强调的是：
 
-一句话：
+- `AI 浏览网关`
+- `会话连续性`
+- `可恢复接力`
 
-# Grasp v0.4 关心的是“连续性”，不只是“控制权”。
+它不承诺：
+
+- 通用验证码绕过
+- 所有高风控站点都能全自动完成
+- 没有页面证据也能判断恢复成功
 
 ---
 
-## 设计理念
+## 快速开始
 
-Agent 应该拥有自己的浏览器。不是借来的会话，不是每次重置的空白标签——而是一个属于它的持久 profile，凭据随使用积累，永不消失。
-
-`chrome-grasp` 就是那个 profile。Agent 在里面完成登录，会话跨越每一次运行。你的标签页和历史从不被触碰。
-
-四个原则贯穿 Grasp 的设计：
-
-**本地，开源。** 全部代码以 MIT 协议开放，运行在你自己的硬件上。没有云后端，没有遥测，不需要账号。Agent 的行为只在你与浏览器之间。
-
-**语义感知，而非原始 HTML。** Grasp 扫描实时视口，生成极简的 Hint Map——屏幕上所有可交互元素的稳定、精炼表示：
-
-```
-[B1] 提交订单      (button, pos:450,320)
-[I1] 优惠码输入框   (input,  pos:450,280)
-[L2] 返回购物车    (link,   pos:200,400)
-```
-
-ID 通过指纹注册表跨调用保持稳定。Token 消耗比原始 HTML 节省 90%+。Agent 通过结构化语义理解 UI，而不是在噪声里盲猜。
-
-**真实输入 + 事后验证。** 每次点击沿曲线路径划过屏幕。每次滚动以一组 wheel 事件序列抵达。每次按键携带独立的时序。这是通过 Chrome DevTools Protocol 分发的输入——不是 `element.click()`。在 `v0.4` 中，这些输入越来越多地与 post-action verification 和 grasp evidence 配对出现。
-
-**Handoff 是一等公民。** 对于强验证与高风控环境，Grasp 接受一次性的人工在场。它不试图抹去所有门槛；它要做的，是把一次必要的人工步骤，转化为可持久化、可恢复、可验证的浏览器连续性。
-
-**它不消灭门槛；它消灭门槛的重复——并拒绝错误恢复。**
-
----
-
-## 安装
-
-### 一行命令
+### 1. 启动 Grasp
 
 ```bash
 npx grasp
 ```
 
-检测 Chrome，以 `chrome-grasp` profile 启动，自动配置 AI 客户端。首次运行时打开浏览器——在里面登录 Agent 需要的服务，会话永久保存。
+它会检测 Chrome，启动专属 `chrome-grasp` 浏览器配置目录，并帮助你把网关接到 AI 客户端上。
 
-### Claude Code
+### 2. 接入客户端
+
+Claude Code：
 
 ```bash
 claude mcp add grasp -- npx -y grasp
 ```
 
-### Claude Desktop / Cursor
+Claude Desktop / Cursor：
 
 ```json
 {
@@ -110,14 +72,105 @@ claude mcp add grasp -- npx -y grasp
 }
 ```
 
-### Codex CLI
+Codex CLI：
 
 ```toml
 [mcp_servers.grasp]
-type    = "stdio"
+type = "stdio"
 command = "npx"
-args    = ["-y", "grasp"]
+args = ["-y", "grasp"]
 ```
+
+### 3. 按网关工作流调用
+
+先用高层工具面：
+
+- `entry`：带着会话策略进入目标 URL
+- `inspect`：判断当前页面是否可读、受阻，还是正在等待接力恢复
+- `extract`：读取页面内容
+- `continue`：在不触发浏览器动作的前提下决定下一步
+
+工具说明见：[docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+手工 smoke 路径见：[docs/reference/smoke-paths.md](./docs/reference/smoke-paths.md)
+
+---
+
+## 网关工作流
+
+### 直接读取
+
+页面已经可读时，用 `entry` -> `inspect` -> `extract`。
+
+你会拿到：
+
+- 当前页面状态
+- 可读取内容
+- 建议的下一步动作
+
+### 带会话感知的进入
+
+就算你认为直接打开就够了，也建议先走 `entry`。
+
+`entry` 会返回进入策略的证据，例如：
+
+- 可以直接进入
+- 建议先用 `preheat_session` 预热
+- 当前更适合先转入接力
+
+### 接力与恢复
+
+当流程必须有人来接一下时，不要假装系统已经全自动，而是把它纳入连续工作流：
+
+1. `entry` 或 `continue` 发现页面受阻
+2. `request_handoff` 记录人工步骤
+3. `mark_handoff_done` 标记人工步骤完成
+4. `resume_after_handoff` 带着延续性证据重新接回页面
+5. `continue` 判断接下来该继续、等待，还是再次接力
+
+产品说明见：[docs/product/ai-browser-gateway.md](./docs/product/ai-browser-gateway.md)
+
+---
+
+## 安全真实表单任务
+
+当页面是真实表单时，优先使用表单任务流程：
+
+`form_inspect` -> `fill_form` / `set_option` / `set_date` -> `verify_form` -> `safe_submit`
+
+默认行为是保守的：
+
+- `fill_form` 只写 `safe` 字段
+- `review` 和 `sensitive` 字段会保留出来，便于显式查看
+- `safe_submit` 默认先走 preview，先看阻塞项再决定是否真正提交
+
+表单任务参考：[docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+
+---
+
+## 动态认证任务流
+
+当当前页面是动态认证 workspace 时，先用 `workspace_inspect` 查看当前状态和下一步建议。
+典型循环是 `workspace_inspect -> select_live_item -> workspace_inspect -> draft_action ->
+workspace_inspect -> execute_action -> verify_outcome`。默认情况下，Grasp 会先草拟内容，
+对不可逆操作要求显式确认，并验证 workspace 是否真的进入了下一状态。
+
+Workspace 任务参考：[docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+
+---
+
+## 高级运行时原语
+
+高层网关工具是默认入口；需要更细粒度控制时，底层运行时原语仍然保留。
+
+常用高级原语：
+
+- 导航与状态：`navigate`、`get_status`、`get_page_summary`
+- 交互地图：`get_hint_map`
+- 可验证动作：`click`、`type`、`hover`、`press_key`、`scroll`
+- 观察：`watch_element`
+- 会话策略与接力辅助：`preheat_session`、`navigate_with_strategy`、`session_trust_preflight`、`suggest_handoff`、`request_handoff_from_checkpoint`、`request_handoff`、`mark_handoff_in_progress`、`mark_handoff_done`、`resume_after_handoff`、`clear_handoff`
+
+完整说明见：[docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 
 ---
 
@@ -125,120 +178,28 @@ args    = ["-y", "grasp"]
 
 | 命令 | 说明 |
 |:---|:---|
-| `grasp` / `grasp connect` | 连接向导——检测 Chrome、启动、配置 AI 客户端 |
-| `grasp status` | 连接状态、当前标签页、最近操作 |
+| `grasp` / `grasp connect` | 初始化本地浏览网关 |
+| `grasp status` | 查看连接状态、当前标签页和最近活动 |
 | `grasp logs` | 查看审计日志（`~/.grasp/audit.log`） |
-| `grasp logs --lines 20` | 最近 20 条 |
-| `grasp logs --follow` | 实时跟随 |
+| `grasp logs --lines 20` | 查看最近 20 行日志 |
+| `grasp logs --follow` | 实时跟随日志 |
 
----
+## 文档
 
-## MCP 工具
+- [docs/README.md](./docs/README.md)
+- [docs/product/ai-browser-gateway.md](./docs/product/ai-browser-gateway.md)
+- [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+- [docs/reference/smoke-paths.md](./docs/reference/smoke-paths.md)
 
-### v0.4 主干工具面
+## 发布
 
-| 工具 | 说明 |
-|:---|:---|
-| `navigate` | 导航到 URL，并刷新 runtime / page grasp 状态 |
-| `get_status` | 当前浏览器 / runtime 状态、页面角色、grasp 信心、handoff 状态 |
-| `get_page_summary` | 标题、URL、模式与精简后的可见内容 |
-| `get_hint_map` | 返回当前视口的语义交互地图 |
-| `click` | 按 Hint ID 点击，并返回验证 evidence |
-| `type` | 按 Hint ID 输入，并进行验证 |
-| `hover` | 按 Hint ID 悬停，并刷新可见交互状态 |
-| `press_key` | 发送键盘输入，并刷新页面状态 |
-| `watch_element` | 监听选择器的 appears / disappears / changes |
-| `scroll` | 滚动当前页面，并刷新 page grasp |
-| `request_handoff` | 持久化记录当前流程需要人工介入 |
-| `mark_handoff_in_progress` | 标记人工正在处理该步骤 |
-| `mark_handoff_done` | 标记人工步骤已完成，进入 reacquisition 阶段 |
-| `resume_after_handoff` | 重新 grasp 页面，并在恢复前校验 continuation anchors |
-| `clear_handoff` | 清空 handoff 状态并回到 idle |
-
-### v0.4 工具面的说明
-
-- `resume_after_handoff` 支持 task continuation anchors：
-  - `expected_url_contains`
-  - `expected_page_role`
-  - `expected_selector`
-- anchors 可以在 `request_handoff` 时持久化写入，并在 resume 时自动继承
-- continuation mismatch 不再误判为 verified，而会落到 `resumed_unverified`
-
-代码库里仍可能保留一些 legacy / auxiliary 能力，但上面这张表才是当前 `v0.4` 的主干工具面。
-
----
-
-## 配置
-
-| 变量 | 默认值 | 说明 |
-|:---|:---|:---|
-| `CHROME_CDP_URL` | `http://localhost:9222` | Chrome 远程调试地址 |
-| `GRASP_SAFE_MODE` | `true` | 执行前拦截高危操作 |
-
-持久化配置存储在 `~/.grasp/config.json`。
-
-## 恢复语义
-
-`v0.4` 中的工具越来越多地会通过结构化 `meta` 暴露恢复语义：
-
-- `error_code`：失败类型，例如 `CDP_UNREACHABLE`、`STALE_HINT`、`ACTION_NOT_VERIFIED`
-- `retryable`：调用方是否可以安全地做有界重试
-- `suggested_next_step`：建议下一步动作，例如 `retry`、`reobserve`、`wait_then_reverify`
-- `evidence`：验证器判断时使用的页面证据
-- handoff 恢复还可以返回 continuation evidence，用来说明期望 URL / role / selector 是否真的匹配
-
-这正是 `v0.4` 的变化之一：
-- 不再只是执行浏览器动作
-- 而是开始判断这次恢复到底算不算有效恢复
-
-benchmark 的 smoke 场景和口径说明仍然保留在 [docs/benchmarks/search-benchmark.md](./docs/benchmarks/search-benchmark.md)。
-
----
-
-## 仓库结构
-
-```
-index.js                    CLI 入口，MCP Server 引导
-src/
-  server/                   工具注册表、状态、审计日志、响应
-  layer1-bridge/            Chrome CDP 连接、WebMCP 探测
-  layer2-perception/        Hint Map、指纹注册表
-  layer3-action/            鼠标曲线、滚轮事件、键盘输入
-  cli/                      connect · status · logs · 自动配置
-examples/                   客户端配置示例
-start-chrome.bat            Windows Chrome 启动脚本
-```
-
----
+- [CHANGELOG.md](./CHANGELOG.md)
+- [docs/release-notes-v0.5.2.md](./docs/release-notes-v0.5.2.md)
 
 ## 许可证
 
 MIT — 见 [LICENSE](./LICENSE)。
 
-## 联系
-
-- Issues：https://github.com/Yuzc-001/grasp/issues
-
-## Claude Code Skill
-
-安装随包附带的 skill，让 Claude 获得 Grasp 所有工具的结构化知识——工作流、Hint Map 用法、安全模式和 WebMCP 探测。
-
-**OpenClaw：** 搜索 `grasp`，一键安装。
-
-**手动安装：**
-
-```bash
-curl -L https://github.com/Yuzc-001/grasp/raw/main/grasp.skill -o ~/.claude/skills/grasp.skill
-```
-
-安装后，Claude 自动知道何时、如何使用 Grasp——无需手动提示。
-
----
-
 ## Star 历史
 
 [![Star History Chart](./star-history.svg)](https://star-history.com/#Yuzc-001/grasp&Date)
-
----
-
-[README.md](README.md) · [CHANGELOG.md](CHANGELOG.md) · [CONTRIBUTING.md](CONTRIBUTING.md)

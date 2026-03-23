@@ -2,102 +2,58 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [GitHub](https://github.com/Yuzc-001/grasp) · [Issues](https://github.com/Yuzc-001/grasp/issues)
 
-[![Version](https://img.shields.io/badge/version-v0.4.0-0B1738?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.5.2-0B1738?style=flat-square)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-23C993?style=flat-square)](./LICENSE)
-[![Validated](https://img.shields.io/badge/validated-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-5B6CFF?style=flat-square)](./README.md#install)
+[![Validated](https://img.shields.io/badge/validated-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-5B6CFF?style=flat-square)](./README.md#quickstart)
 [![npm](https://img.shields.io/badge/npm-grasp-CB3837?style=flat-square)](https://www.npmjs.com/package/grasp)
 
-> **Give AI its own browser runtime.**
->
-> Persistent state, verified actions, and recoverable handoff — on your machine, in your Chrome profile.
+> **Grasp is an AI browser gateway: it enters, reads, acts, hands off, and resumes real web tasks with evidence.**
 
-Grasp is an open-source MCP browser runtime for AI agents. It runs entirely on your machine, connects to a dedicated `chrome-grasp` profile, and gives agents not just browser control, but browser continuity: page grasp, action verification, handoff persistence, and recovery after human intervention.
+Grasp runs locally, keeps a dedicated `chrome-grasp` profile, and gives agents a browser session they can reuse instead of restarting from scratch every time.
 
-**Current release:** `v0.4.0`
-
-**Release docs:**
-- [Release Notes](./docs/release-notes-v0.4.0.md)
-- [Implementation Milestone](./docs/grasp_v0.4_主干里程碑_v1.md)
-- [Product Positioning](./docs/grasp_作品诊断与定位收紧建议_v1.md)
+Current package release: `v0.5.2`  
+Public docs for the gateway surface: [docs/README.md](./docs/README.md)
 
 ---
 
-## What makes v0.4 different
+## Why It Matters
 
-`v0.4` is not just “more browser tools”.
-It is the point where Grasp starts acting like a browser runtime instead of a browser wrapper.
+Most browser automation breaks at exactly the wrong moment: after login, after a checkpoint, or after a human has to step in once.
 
-### v0.4 mainline
-- **Runtime Truth** — browser/runtime status is normalized into a single truth layer
-- **Page Grasp** — Grasp tracks page role, confidence, page identity, and reacquisition state
-- **Verified actions** — `click` / `type` return structured evidence instead of blind success
-- **Recoverable handoff** — human-required steps can be requested, persisted, and resumed across calls
-- **Task continuation anchors** — resume can verify expected URL, page role, and selector presence
-- **False-verified defense** — Grasp can reject a resumed session when the page came back but the task did not
+Grasp is built for those real workflows:
 
-### What Grasp claims in v0.4
-- the agent can own a persistent browser profile
-- the agent can reason over a compact semantic view of the page
-- the agent can verify observable action outcomes
-- the agent can survive handoff / resume across calls
-- the agent can reject wrong recovery when continuation anchors do not match
+- persistent browser sessions instead of throwaway tabs
+- verified actions instead of blind `click` success
+- compact page understanding instead of raw HTML dumps
+- recoverable handoff and resume instead of starting over
 
-### What Grasp does not claim in v0.4
-- universal bypass of high-friction or strongly verified environments
-- fully autonomous completion of every login or CAPTCHA flow
-- full task-semantic recovery for every multi-step workflow
+What it does not claim:
 
-In short:
-
-# Grasp v0.4 is about continuity, not just control.
+- universal CAPTCHA bypass
+- full autonomy on every gated site
+- magic recovery without visible evidence
 
 ---
 
-## Design
+## Quickstart
 
-The agent should have its own browser. Not a borrowed session, not a fresh blank tab — a persistent profile it owns, with credentials that accumulate over time.
-
-`chrome-grasp` is that profile. The agent logs in to the services it needs. Those sessions outlast every run. Your tabs and history are never touched.
-
-Four principles shape how Grasp works:
-
-**Local and open.** The entire codebase is MIT-licensed and runs on your hardware. No cloud backend. No telemetry. No account. What the agent does is visible only to you.
-
-**Semantic perception, not raw HTML.** Grasp scans the live viewport and produces a compact Hint Map — a stable, minimal representation of what is interactable on screen:
-
-```
-[B1] Submit order      (button, pos:450,320)
-[I1] Coupon code       (input,  pos:450,280)
-[L2] Back to cart      (link,   pos:200,400)
-```
-
-IDs are fingerprint-stable across calls. Token cost drops 90%+ versus passing raw HTML. The agent reasons about UI through structured, meaningful data.
-
-**Real input plus verification.** Every click traces a curved path across the screen. Every scroll arrives as a sequence of wheel events. Every keystroke carries its own timing. This is input dispatched through Chrome DevTools Protocol — not `element.click()`. In `v0.4`, that input is increasingly paired with post-action verification and grasp evidence.
-
-**Handoff is first-class.** For high-friction or strongly verified environments, Grasp accepts one-time human presence. It does not try to erase every gate. It turns a necessary human step into persisted browser state and a recoverable continuation path.
-
-**It does not eliminate gates. It eliminates the repetition of gates — and it rejects the wrong recovery.**
-
----
-
-## Install
-
-### One command
+### 1. Start Grasp
 
 ```bash
 npx grasp
 ```
 
-Detects Chrome, launches it with the `chrome-grasp` profile, and auto-configures your AI client. First run opens the browser — log in to any services your agent will use. Sessions are saved permanently.
+This detects Chrome, launches the dedicated `chrome-grasp` profile, and helps you connect your AI client.
 
-### Claude Code
+### 2. Connect your client
+
+Claude Code:
 
 ```bash
 claude mcp add grasp -- npx -y grasp
 ```
 
-### Claude Desktop / Cursor
+Claude Desktop / Cursor:
 
 ```json
 {
@@ -110,14 +66,106 @@ claude mcp add grasp -- npx -y grasp
 }
 ```
 
-### Codex CLI
+Codex CLI:
 
 ```toml
 [mcp_servers.grasp]
-type    = "stdio"
+type = "stdio"
 command = "npx"
-args    = ["-y", "grasp"]
+args = ["-y", "grasp"]
 ```
+
+### 3. Use the gateway flow
+
+Start with the high-level tools:
+
+- `entry` to open a task URL with session-aware strategy
+- `inspect` to see whether the page is ready, gated, or waiting on handoff
+- `extract` to read the page content
+- `continue` to decide the next step without firing a browser action
+
+Reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+Manual smoke playbook: [docs/reference/smoke-paths.md](./docs/reference/smoke-paths.md)
+
+---
+
+## Gateway Workflows
+
+### Direct read
+
+Use `entry` -> `inspect` -> `extract` when the page is already readable.
+
+What you get:
+
+- current page status
+- readable content
+- a suggested next action
+
+### Session-aware entry
+
+Use `entry` first even when you think a direct navigation is fine.
+
+`entry` can surface strategy evidence such as:
+
+- direct entry is fine
+- warm up the host with `preheat_session`
+- stop and move into handoff
+
+### Handoff and resume
+
+When a human step is required, keep the workflow continuous instead of pretending it is fully autonomous:
+
+1. `entry` or `continue` shows the page is gated
+2. `request_handoff` records the required human step
+3. `mark_handoff_done` marks the step complete
+4. `resume_after_handoff` reacquires the page with continuation evidence
+5. `continue` decides what should happen next
+
+Product story: [docs/product/ai-browser-gateway.md](./docs/product/ai-browser-gateway.md)
+
+---
+
+## Safe Real Form Tasks
+
+When the page is a real form, use the form-task flow:
+
+`form_inspect` -> `fill_form` / `set_option` / `set_date` -> `verify_form` -> `safe_submit`
+
+The default behavior is conservative:
+
+- `fill_form` only writes safe fields
+- `review` and `sensitive` fields stay visible so you can inspect them explicitly
+- `safe_submit` starts with preview, so you can check blockers before any real submit
+
+Form-task reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+
+---
+
+## Dynamic Authenticated Task Flows
+
+Use `workspace_inspect` to inspect a dynamic authenticated workspace and let it suggest the
+next step. A typical loop is `workspace_inspect -> select_live_item -> workspace_inspect ->
+draft_action -> workspace_inspect -> execute_action -> verify_outcome`. By default Grasp drafts
+first, requires explicit confirmation for irreversible actions, and verifies that the workspace
+really moved to the next state.
+
+Workspace task reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+
+---
+
+## Advanced Runtime Primitives
+
+The gateway tools are the public default. The lower-level runtime is still available when you need tighter control.
+
+Common advanced primitives:
+
+- navigation and state: `navigate`, `get_status`, `get_page_summary`
+- interaction map: `get_hint_map`
+- verified actions: `click`, `type`, `hover`, `press_key`, `scroll`
+- observation: `watch_element`
+- session strategy and handoff helpers: `preheat_session`, `navigate_with_strategy`, `session_trust_preflight`, `suggest_handoff`, `request_handoff_from_checkpoint`, `request_handoff`, `mark_handoff_in_progress`, `mark_handoff_done`, `resume_after_handoff`, `clear_handoff`
+
+Full reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 
 ---
 
@@ -125,120 +173,28 @@ args    = ["-y", "grasp"]
 
 | Command | Description |
 |:---|:---|
-| `grasp` / `grasp connect` | Setup wizard — detect Chrome, launch, configure AI clients |
-| `grasp status` | Connection state, current tab, recent activity |
+| `grasp` / `grasp connect` | Set up the local browser gateway |
+| `grasp status` | Show connection state, current tab, and recent activity |
 | `grasp logs` | View audit log (`~/.grasp/audit.log`) |
-| `grasp logs --lines 20` | Last 20 entries |
-| `grasp logs --follow` | Stream in real time |
+| `grasp logs --lines 20` | Show the last 20 log lines |
+| `grasp logs --follow` | Stream the audit log |
 
----
+## Docs
 
-## MCP tools
+- [docs/README.md](./docs/README.md)
+- [docs/product/ai-browser-gateway.md](./docs/product/ai-browser-gateway.md)
+- [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+- [docs/reference/smoke-paths.md](./docs/reference/smoke-paths.md)
 
-### v0.4 mainline surface
+## Releases
 
-| Tool | Description |
-|:---|:---|
-| `navigate` | Navigate to a URL and refresh runtime/page grasp state |
-| `get_status` | Current browser/runtime status, page role, grasp confidence, handoff state |
-| `get_page_summary` | Title, URL, mode, and concise visible content |
-| `get_hint_map` | Return the semantic interaction map for the current viewport |
-| `click` | Click by hint ID with post-action verification and evidence |
-| `type` | Type by hint ID with verification |
-| `hover` | Hover by hint ID and refresh visible interaction state |
-| `press_key` | Send keyboard input and refresh page state |
-| `watch_element` | Watch a selector for appears / disappears / changes |
-| `scroll` | Scroll the current page and refresh page grasp |
-| `request_handoff` | Persist that the workflow now requires human help |
-| `mark_handoff_in_progress` | Mark that a human is actively handling the step |
-| `mark_handoff_done` | Mark that the human step is complete and reacquisition should begin |
-| `resume_after_handoff` | Reacquire the page and verify continuation anchors before resuming |
-| `clear_handoff` | Clear handoff state and return to idle |
-
-### Notes on the v0.4 surface
-
-- `resume_after_handoff` supports task continuation anchors:
-  - `expected_url_contains`
-  - `expected_page_role`
-  - `expected_selector`
-- Anchors can be persisted in `request_handoff` and inherited automatically during resume
-- Continuation mismatch now causes `resumed_unverified` instead of a false `verified` state
-
-Legacy and auxiliary capabilities may still exist in the codebase, but the table above is the current `v0.4` mainline surface.
-
----
-
-## Configuration
-
-| Variable | Default | Description |
-|:---|:---|:---|
-| `CHROME_CDP_URL` | `http://localhost:9222` | Chrome remote debugging address |
-| `GRASP_SAFE_MODE` | `true` | Intercept high-risk actions before execution |
-
-Persistent config at `~/.grasp/config.json`.
-
-## Recovery Semantics
-
-`v0.4` tools increasingly surface structured recovery signals through response metadata:
-
-- `error_code` identifies the failure class (`CDP_UNREACHABLE`, `STALE_HINT`, `ACTION_NOT_VERIFIED`, and friends)
-- `retryable` tells the caller whether bounded recovery is safe
-- `suggested_next_step` points to the next move (`retry`, `reobserve`, `wait_then_reverify`)
-- `evidence` includes the page-level details used by the verifier
-- handoff recovery can also include continuation evidence showing whether expected URL / role / selector anchors matched
-
-This is part of the larger `v0.4` shift:
-- not just executing browser actions
-- but deciding whether recovery was actually valid
-
-Benchmark smoke scenarios and reporting rules still live in [docs/benchmarks/search-benchmark.md](./docs/benchmarks/search-benchmark.md).
-
----
-
-## Repository
-
-```
-index.js                    CLI entry, MCP server bootstrap
-src/
-  server/                   Tool registry, state, audit, responses
-  layer1-bridge/            Chrome CDP connection, WebMCP detection
-  layer2-perception/        Hint Map, fingerprint registry
-  layer3-action/            Mouse curves, wheel scroll, keyboard events
-  cli/                      connect · status · logs · auto-configure
-examples/                   Client config samples
-start-chrome.bat            Windows Chrome launcher
-```
-
----
+- [CHANGELOG.md](./CHANGELOG.md)
+- [docs/release-notes-v0.5.2.md](./docs/release-notes-v0.5.2.md)
 
 ## License
 
 MIT — see [LICENSE](./LICENSE).
 
-## Contact
-
-- Issues: https://github.com/Yuzc-001/grasp/issues
-
-## Claude Code Skill
-
-Install the bundled skill to give Claude structured knowledge of every Grasp tool — workflows, hint map usage, safety mode, and WebMCP detection.
-
-**OpenClaw:** Search for `grasp` and install in one click.
-
-**Manual install:**
-
-```bash
-curl -L https://github.com/Yuzc-001/grasp/raw/main/grasp.skill -o ~/.claude/skills/grasp.skill
-```
-
-Once installed, Claude automatically knows when and how to use Grasp — no manual prompting needed.
-
----
-
-## Star history
+## Star History
 
 [![Star History Chart](./star-history.svg)](https://star-history.com/#Yuzc-001/grasp&Date)
-
----
-
-[README.zh-CN.md](README.zh-CN.md) · [CHANGELOG.md](CHANGELOG.md) · [CONTRIBUTING.md](CONTRIBUTING.md)
