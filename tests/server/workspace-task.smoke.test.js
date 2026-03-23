@@ -93,8 +93,19 @@ test('guarded workspace execute preview plus verified outcome', async () => {
     loading_shell: false,
     summary: { active_item_label: '李女士', draft_present: true, loading_shell: false },
   };
+  const sentSnapshot = {
+    ...baseSnapshot,
+    composer: { kind: 'chat_composer', hint_id: 'C1', draft_present: false, draft_text: '' },
+    summary: { active_item_label: '李女士', draft_present: false, loading_shell: false },
+    outcome_signals: { delivered: true, composer_cleared: true, active_item_stable: true },
+  };
+  let snapshotCalls = 0;
 
   const { calls } = await registerWorkspaceToolsWithSnapshot(baseSnapshot, {
+    collectVisibleWorkspaceSnapshot: async () => {
+      snapshotCalls += 1;
+      return snapshotCalls <= 3 ? baseSnapshot : sentSnapshot;
+    },
     executeWorkspaceAction: async (_runtime, params) => {
       if (params.mode === 'preview') {
         return {
@@ -120,11 +131,7 @@ test('guarded workspace execute preview plus verified outcome', async () => {
         failure: null,
         verification: { delivered: true, composer_cleared: true, active_item_stable: true },
         action: { kind: 'execute_action', status: 'executed' },
-        snapshot: {
-          ...baseSnapshot,
-          composer: { kind: 'chat_composer', hint_id: 'C1', draft_present: false, draft_text: '' },
-          summary: { active_item_label: '李女士', draft_present: false, loading_shell: false },
-        },
+        snapshot: sentSnapshot,
         workspace: null,
         summary: 'Workspace thread • 李女士',
       };
@@ -132,15 +139,19 @@ test('guarded workspace execute preview plus verified outcome', async () => {
   })();
 
   const executeAction = calls.find((entry) => entry.name === 'execute_action');
+  const verifyOutcome = calls.find((entry) => entry.name === 'verify_outcome');
   const preview = await executeAction.handler({ action: 'send', mode: 'preview' });
   const confirm = await executeAction.handler({ action: 'send', mode: 'confirm', confirmation: 'EXECUTE' });
+  const verification = await verifyOutcome.handler({});
 
   assert.equal(preview.meta.result.blocked, true);
   assert.equal(preview.meta.result.reason, 'preview_safe');
-  assert.equal(preview.meta.continuation.suggested_next_action, 'workspace_inspect');
+  assert.equal(preview.meta.continuation.suggested_next_action, 'verify_outcome');
   assert.equal(confirm.meta.result.status, 'success');
   assert.equal(confirm.meta.result.verification.delivered, true);
-  assert.equal(confirm.meta.continuation.suggested_next_action, 'workspace_inspect');
+  assert.equal(confirm.meta.continuation.suggested_next_action, 'verify_outcome');
+  assert.equal(verification.meta.result.verification.delivered, true);
+  assert.equal(verification.meta.continuation.suggested_next_action, 'draft_action');
 });
 
 test('resumed workspace continuation lands on workspace_inspect', async () => {

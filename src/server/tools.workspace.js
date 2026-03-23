@@ -496,7 +496,7 @@ function registerWorkspaceExecuteActionTool(server, state, deps) {
       const finalSnapshot = await collectSnapshot(page, state);
       const finalView = buildWorkspaceSnapshotView(finalSnapshot);
       const finalStatus = getWorkspaceStatus(state);
-      const continuationAction = finalStatus === 'direct' ? 'workspace_inspect' : 'request_handoff';
+      const continuationAction = finalStatus === 'direct' ? 'verify_outcome' : 'request_handoff';
       const pageInfoAfter = {
         title: await page.title(),
         url: page.url(),

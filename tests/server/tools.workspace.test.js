@@ -338,7 +338,7 @@ test('workspace action tools select live items directly while draft_action draft
 
   assert.equal(directResults[0].meta.continuation.suggested_next_action, 'workspace_inspect');
   assert.equal(directResults[1].meta.continuation.suggested_next_action, 'workspace_inspect');
-  assert.equal(directResults[2].meta.continuation.suggested_next_action, 'workspace_inspect');
+  assert.equal(directResults[2].meta.continuation.suggested_next_action, 'verify_outcome');
   assert.equal(directResults[0].meta.result.status, 'selected');
   assert.equal(directResults[1].meta.result.status, 'drafted');
   assert.deepEqual(directResults.map((result) => result.meta.result.action.status), ['selected', 'drafted', 'executed']);
