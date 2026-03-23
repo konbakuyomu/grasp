@@ -5,7 +5,7 @@ import { getActivePage } from '../layer1-bridge/chrome.js';
 import { clickByHintId } from '../layer3-action/actions.js';
 import { syncPageState } from './state.js';
 import { collectVisibleWorkspaceSnapshot, getWorkspaceContinuation, getWorkspaceStatus, summarizeWorkspaceSnapshot } from './workspace-tasks.js';
-import { selectWorkspaceItem } from './workspace-runtime.js';
+import { draftWorkspaceAction, selectWorkspaceItem } from './workspace-runtime.js';
 
 function toGatewayPage(page, state) {
   return {
@@ -141,6 +141,19 @@ function toPublicSelectionUnresolved(unresolved) {
   };
 }
 
+function toPublicDraftEvidence(draftEvidence) {
+  if (!draftEvidence) return null;
+
+  return {
+    kind: draftEvidence.kind ?? 'draft_action',
+    target: draftEvidence.target ?? 'chat_composer',
+    autosave_possible: draftEvidence.autosave_possible === true,
+    write_side_effect: draftEvidence.write_side_effect ?? 'draft_mutation_possible',
+    draft_present: draftEvidence.draft_present === true,
+    summary: draftEvidence.summary ?? null,
+  };
+}
+
 function toPublicWorkspaceSummary(summary, snapshot) {
   const blockingModalLabels = Array.isArray(summary?.blocking_modal_labels)
     ? summary.blocking_modal_labels
@@ -245,7 +258,7 @@ function registerWorkspaceActionTool(server, state, deps, toolName, actionKind) 
   const getPage = deps.getActivePage ?? getActivePage;
   const syncState = deps.syncPageState ?? syncPageState;
   const collectSnapshot = deps.collectVisibleWorkspaceSnapshot ?? collectVisibleWorkspaceSnapshot;
-  const actionDependency = deps[toolName === 'select_live_item' ? 'selectLiveItem' : toolName === 'draft_action' ? 'draftAction' : 'executeAction'];
+  const actionDependency = deps[toolName === 'select_live_item' ? 'selectLiveItem' : 'executeAction'];
 
   server.registerTool(
     toolName,
@@ -288,6 +301,98 @@ function registerWorkspaceActionTool(server, state, deps, toolName, actionKind) 
           active_item_label: workspaceSummary.active_item_label ?? null,
           loading_shell: workspaceSummary.loading_shell ?? false,
           blocking_modal_count: workspaceSummary.blocking_modal_count ?? 0,
+        },
+      });
+    }
+  );
+}
+
+function registerWorkspaceDraftActionTool(server, state, deps) {
+  const getPage = deps.getActivePage ?? getActivePage;
+  const syncState = deps.syncPageState ?? syncPageState;
+  const collectSnapshot = deps.collectVisibleWorkspaceSnapshot ?? collectVisibleWorkspaceSnapshot;
+  const draftAction = deps.draftWorkspaceAction ?? draftWorkspaceAction;
+
+  server.registerTool(
+    'draft_action',
+    {
+      description: 'Draft text into the current workspace composer and return the refreshed workspace snapshot.',
+      inputSchema: {
+        text: z.string().describe('Draft text to write into the current workspace composer'),
+      },
+    },
+    async ({ text }) => {
+      const page = await getPage();
+      const { pageInfo, snapshot, workspace, workspaceSummary, workspaceSurface } = await loadWorkspacePageContext(page, state, syncState, collectSnapshot);
+      const status = getWorkspaceStatus(state);
+      const continuationAction = status === 'direct' ? 'workspace_inspect' : 'request_handoff';
+
+      if (status !== 'direct') {
+        return buildGatewayResponse({
+          status,
+          page: toGatewayPage(pageInfo, state),
+          result: {
+            task_kind: 'workspace',
+            status: 'blocked',
+            draft_evidence: null,
+            action: {
+              kind: 'draft_action',
+              status: 'blocked',
+            },
+            snapshot: workspace,
+            workspace,
+            summary: `Workspace ${workspaceSurface} • ${workspaceSummary.active_item_label ?? 'no active item'}`,
+          },
+          continuation: getWorkspaceContinuation(state, continuationAction),
+          evidence: {
+            workspace_surface: workspaceSurface,
+            active_item_label: workspaceSummary.active_item_label ?? null,
+            loading_shell: workspaceSummary.loading_shell ?? false,
+            blocking_modal_count: workspaceSummary.blocking_modal_count ?? 0,
+          },
+        });
+      }
+
+      const draftResult = await draftAction({
+        state,
+        page,
+        snapshot,
+        refreshSnapshot: async () => {
+          await syncState(page, state, { force: true });
+          return collectSnapshot(page, state);
+        },
+      }, text);
+      const refreshedSnapshot = draftResult.snapshot ?? snapshot;
+      const refreshedView = buildWorkspaceSnapshotView(refreshedSnapshot);
+      const pageInfoAfter = {
+        title: await page.title(),
+        url: page.url(),
+      };
+      const publicDraftEvidence = toPublicDraftEvidence(draftResult.draft_evidence);
+      const publicSnapshot = refreshedView.workspace;
+
+      return buildGatewayResponse({
+        status,
+        page: toGatewayPage(pageInfoAfter, state),
+        result: {
+          task_kind: 'workspace',
+          status: draftResult.status ?? 'unresolved',
+          draft_evidence: publicDraftEvidence,
+          action: {
+            kind: 'draft_action',
+            status: draftResult.status ?? 'unresolved',
+          },
+          snapshot: publicSnapshot,
+          workspace: publicSnapshot,
+          summary: `Workspace ${refreshedView.workspaceSurface} • ${refreshedView.workspaceSummary.active_item_label ?? 'no active item'}`,
+        },
+        continuation: getWorkspaceContinuation(state, 'workspace_inspect'),
+        evidence: {
+          workspace_surface: refreshedView.workspaceSurface,
+          active_item_label: refreshedView.workspaceSummary.active_item_label ?? null,
+          loading_shell: refreshedView.workspaceSummary.loading_shell ?? false,
+          blocking_modal_count: refreshedView.workspaceSummary.blocking_modal_count ?? 0,
+          draft_evidence: publicDraftEvidence,
         },
       });
     }
@@ -419,6 +524,6 @@ export function registerWorkspaceTools(server, state, deps = {}) {
       });
     }
   );
-  registerWorkspaceActionTool(server, state, deps, 'draft_action', 'draft_action');
+  registerWorkspaceDraftActionTool(server, state, deps);
   registerWorkspaceActionTool(server, state, deps, 'execute_action', 'execute_action');
 }

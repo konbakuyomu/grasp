@@ -754,3 +754,104 @@ export async function draftIntoComposer(runtime, text, options = {}) {
     });
   });
 }
+
+export async function draftWorkspaceAction(runtime, text, options = {}) {
+  const state = runtime?.state ?? null;
+  const status = getWorkspaceStatus(state ?? {});
+  const initialSnapshot = normalizeWorkspaceSnapshot(runtime?.snapshot ?? runtime ?? {});
+
+  if (status !== 'direct') {
+    const composer = resolveComposer(initialSnapshot).composer ?? getComposer(initialSnapshot);
+
+    return {
+      status,
+      draft_present: initialSnapshot?.composer?.draft_present === true,
+      snapshot: initialSnapshot,
+      draft_evidence: {
+        ...createWorkspaceWriteEvidence({ kind: 'draft_action', target: composer?.kind ?? 'chat_composer' }),
+        draft_present: initialSnapshot?.composer?.draft_present === true,
+      },
+      action: {
+        kind: 'draft_action',
+        status: 'blocked',
+      },
+    };
+  }
+
+  const resolution = resolveComposer(initialSnapshot);
+  if (!resolution.composer) {
+    return {
+      status: 'unresolved',
+      draft_present: initialSnapshot?.composer?.draft_present === true,
+      unresolved: resolution.unresolved,
+      snapshot: initialSnapshot,
+      action: {
+        kind: 'draft_action',
+        status: 'unresolved',
+      },
+    };
+  }
+
+  const composer = resolution.composer;
+  if (!compactText(composer?.hint_id)) {
+    return {
+      status: 'unresolved',
+      draft_present: initialSnapshot?.composer?.draft_present === true,
+      unresolved: buildUnresolved('no_live_target', 'composer', [composer]),
+      snapshot: initialSnapshot,
+      action: {
+        kind: 'draft_action',
+        status: 'unresolved',
+      },
+    };
+  }
+
+  const draft = typeof runtime?.draftIntoComposer === 'function'
+    ? runtime.draftIntoComposer
+    : draftIntoComposer;
+
+  const draftResult = await draft(runtime, text, options);
+  if (!draftResult?.ok) {
+    return {
+      status: 'unresolved',
+      draft_present: initialSnapshot?.composer?.draft_present === true,
+      unresolved: draftResult?.unresolved ?? null,
+      error_code: draftResult?.error_code ?? null,
+      retryable: draftResult?.retryable ?? true,
+      suggested_next_step: draftResult?.suggested_next_step ?? 'reverify',
+      snapshot: normalizeWorkspaceSnapshot(draftResult?.snapshot ?? runtime?.snapshot ?? initialSnapshot),
+      action: {
+        kind: 'draft_action',
+        status: 'unresolved',
+      },
+    };
+  }
+
+  const refreshedSnapshot = normalizeWorkspaceSnapshot(
+    typeof runtime?.refreshSnapshot === 'function'
+      ? await runtime.refreshSnapshot()
+      : draftResult.snapshot ?? runtime?.snapshot ?? initialSnapshot,
+  );
+
+  if (typeof runtime?.persistSnapshot === 'function') {
+    await runtime.persistSnapshot(refreshedSnapshot);
+  }
+
+  if (runtime && typeof runtime === 'object') {
+    runtime.snapshot = refreshedSnapshot;
+  }
+
+  return {
+    status: 'drafted',
+    draft_present: refreshedSnapshot?.composer?.draft_present === true,
+    snapshot: refreshedSnapshot,
+    draft_evidence: {
+      ...createWorkspaceWriteEvidence({ kind: 'draft_action', target: composer.kind ?? 'chat_composer' }),
+      draft_present: refreshedSnapshot?.composer?.draft_present === true,
+    },
+    action: {
+      kind: 'draft_action',
+      status: 'drafted',
+    },
+  };
+}

@@ -202,7 +202,7 @@ test('workspace_inspect does not suggest execute_action when blockers are visibl
   assert.equal(missingSendResult.meta.continuation.suggested_next_action, 'draft_action');
 });
 
-test('workspace action tools select live items directly while draft and execute still delegate', async () => {
+test('workspace action tools select live items directly while draft_action drafts directly and execute still delegates', async () => {
   const directCalls = [];
   const directServer = { registerTool(name, spec, handler) { directCalls.push({ name, handler }); } };
   const directState = {
@@ -225,21 +225,44 @@ test('workspace action tools select live items directly while draft and execute 
       summary: { active_item_label: '李女士', draft_present: true, loading_shell: false },
     }),
     selectLiveItem: async () => directInvocations.push('select_live_item'),
-    draftAction: async () => directInvocations.push('draft_action'),
+    draftWorkspaceAction: async (_runtime, text) => {
+      directInvocations.push(`draft_action:${text}`);
+      return {
+        status: 'drafted',
+        draft_evidence: {
+          kind: 'draft_action',
+          target: 'chat_composer',
+          autosave_possible: true,
+          write_side_effect: 'draft_mutation_possible',
+          draft_present: true,
+        },
+        snapshot: {
+          workspace_surface: 'thread',
+          live_items: [{ label: '李女士', selected: true, hint_id: 'L1', normalized_label: '李女士' }],
+          active_item: { label: '李女士', hint_id: 'L1', normalized_label: '李女士', selected: true },
+          composer: { kind: 'chat_composer', hint_id: 'C1', draft_present: true, draft_text: '你好' },
+          action_controls: [{ label: '发送', action_kind: 'send', hint_id: 'B1' }],
+          blocking_modals: [],
+          loading_shell: false,
+          summary: { active_item_label: '李女士', draft_present: true, loading_shell: false },
+        },
+      };
+    },
     executeAction: async () => directInvocations.push('execute_action'),
   });
 
   const directResults = [];
   for (const toolName of ['select_live_item', 'draft_action', 'execute_action']) {
     const tool = directCalls.find((entry) => entry.name === toolName);
-    directResults.push(await tool.handler(toolName === 'select_live_item' ? { item: '李女士' } : {}));
+    directResults.push(await tool.handler(toolName === 'select_live_item' ? { item: '李女士' } : toolName === 'draft_action' ? { text: '你好' } : {}));
   }
 
   assert.equal(directResults[0].meta.continuation.suggested_next_action, 'workspace_inspect');
   assert.equal(directResults[1].meta.continuation.suggested_next_action, 'workspace_inspect');
   assert.equal(directResults[2].meta.continuation.suggested_next_action, 'workspace_inspect');
   assert.equal(directResults[0].meta.result.status, 'selected');
-  assert.deepEqual(directResults.map((result) => result.meta.result.action.status), ['selected', 'delegated', 'delegated']);
+  assert.equal(directResults[1].meta.result.status, 'drafted');
+  assert.deepEqual(directResults.map((result) => result.meta.result.action.status), ['selected', 'drafted', 'delegated']);
   assert.equal(directResults[0].meta.result.selected_item.label, '李女士');
   assert.equal(directResults[0].meta.result.active_item.label, '李女士');
   assert.equal(directResults[0].meta.result.selected_item.hint_id, undefined);
@@ -249,7 +272,12 @@ test('workspace action tools select live items directly while draft and execute 
   assert.equal(directResults[0].meta.result.snapshot.live_items[0].hint_id, undefined);
   assert.equal(directResults[0].meta.result.snapshot.live_items[0].normalized_label, undefined);
   assert.equal(directResults[0].meta.result.snapshot.composer?.draft_text, undefined);
-  assert.deepEqual(directInvocations, ['select_live_item', 'draft_action', 'execute_action']);
+  assert.equal(directResults[1].meta.result.snapshot.composer?.draft_text, undefined);
+  assert.equal(directResults[1].meta.result.draft_evidence?.draft_text, undefined);
+  assert.equal(directResults[1].meta.result.snapshot.live_items[0].hint_id, undefined);
+  assert.equal(directResults[1].meta.result.snapshot.live_items[0].normalized_label, undefined);
+  assert.equal(directResults[1].meta.result.snapshot.composer?.hint_id, undefined);
+  assert.deepEqual(directInvocations, ['select_live_item', 'draft_action:你好', 'execute_action']);
 
   const blockedCalls = [];
   const blockedServer = { registerTool(name, spec, handler) { blockedCalls.push({ name, handler }); } };
@@ -273,13 +301,13 @@ test('workspace action tools select live items directly while draft and execute 
       summary: { active_item_label: '李女士', draft_present: true, loading_shell: false },
     }),
     selectLiveItem: async () => blockedMutations.push('select_live_item_mutated'),
-    draftAction: async () => blockedMutations.push('draft_action_mutated'),
+    draftWorkspaceAction: async () => blockedMutations.push('draft_action_mutated'),
     executeAction: async () => blockedMutations.push('execute_action_mutated'),
   });
 
   for (const toolName of ['select_live_item', 'draft_action', 'execute_action']) {
     const tool = blockedCalls.find((entry) => entry.name === toolName);
-    const result = await tool.handler(toolName === 'select_live_item' ? { item: '李女士' } : {});
+    const result = await tool.handler(toolName === 'select_live_item' ? { item: '李女士' } : toolName === 'draft_action' ? { text: '你好' } : {});
 
     assert.equal(result.meta.status, 'handoff_required');
     assert.equal(result.meta.continuation.suggested_next_action, 'request_handoff');
@@ -294,6 +322,12 @@ test('workspace action tools select live items directly while draft and execute 
       assert.equal(result.meta.result.selection_evidence.selected_item?.hint_id, undefined);
       assert.equal(result.meta.result.snapshot.live_items[0].hint_id, undefined);
       assert.equal(result.meta.result.snapshot.live_items[0].normalized_label, undefined);
+    } else if (toolName === 'draft_action') {
+      assert.equal(result.meta.result.status, 'blocked');
+      assert.equal(result.meta.result.action.status, 'blocked');
+      assert.equal(result.meta.result.snapshot.composer?.draft_text, undefined);
+      assert.equal(result.meta.result.snapshot.composer?.hint_id, undefined);
+      assert.equal(result.meta.result.draft_evidence?.draft_text, undefined);
     }
   }
 
@@ -321,23 +355,18 @@ test('workspace action tools select live items directly while draft and execute 
       summary: { active_item_label: '李女士', draft_present: true, loading_shell: false },
     }),
     selectLiveItem: async () => gatedMutations.push('select_live_item_mutated'),
-    draftAction: async () => gatedMutations.push('draft_action_mutated'),
+    draftWorkspaceAction: async () => gatedMutations.push('draft_action_mutated'),
     executeAction: async () => gatedMutations.push('execute_action_mutated'),
   });
 
-  const gatedResult = await gatedCalls.find((entry) => entry.name === 'select_live_item').handler({ item: '李女士' });
+  const gatedResult = await gatedCalls.find((entry) => entry.name === 'draft_action').handler({ text: '你好' });
   assert.equal(gatedResult.meta.status, 'gated');
   assert.equal(gatedResult.meta.continuation.suggested_next_action, 'request_handoff');
   assert.equal(gatedResult.meta.result.status, 'blocked');
-  assert.equal(gatedResult.meta.result.active_item.label, '李女士');
-  assert.notEqual(gatedResult.meta.result.detail_alignment, undefined);
   assert.ok(gatedResult.meta.result.snapshot);
-  assert.ok(gatedResult.meta.result.selection_evidence);
-  assert.equal(gatedResult.meta.result.selected_item, null);
-  assert.equal(gatedResult.meta.result.active_item.hint_id, undefined);
-  assert.equal(gatedResult.meta.result.selection_evidence.selected_item?.hint_id, undefined);
-  assert.equal(gatedResult.meta.result.snapshot.live_items[0].hint_id, undefined);
-  assert.equal(gatedResult.meta.result.snapshot.live_items[0].normalized_label, undefined);
+  assert.equal(gatedResult.meta.result.snapshot.composer?.hint_id, undefined);
+  assert.equal(gatedResult.meta.result.snapshot.composer?.draft_text, undefined);
+  assert.equal(gatedResult.meta.result.draft_evidence?.draft_text, undefined);
   assert.deepEqual(gatedMutations, []);
 });
 
