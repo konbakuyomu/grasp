@@ -143,10 +143,11 @@ Form-task reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md
 
 ## Dynamic Authenticated Task Flows
 
-Use `workspace_inspect -> select_live_item -> draft_action -> execute_action -> verify_outcome`
-when the current page is a dynamic authenticated workspace. By default Grasp drafts first,
-requires explicit confirmation for irreversible actions, and verifies that the workspace really
-moved to the next state.
+Use `workspace_inspect` to inspect a dynamic authenticated workspace and let it suggest the
+next step. A typical loop is `workspace_inspect -> select_live_item -> workspace_inspect ->
+draft_action -> workspace_inspect -> execute_action -> verify_outcome`. By default Grasp drafts
+first, requires explicit confirmation for irreversible actions, and verifies that the workspace
+really moved to the next state.
 
 Workspace task reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 

@@ -63,9 +63,11 @@ Recommended workspace flow:
 
 1. `workspace_inspect`
 2. `select_live_item`
-3. `draft_action`
-4. `execute_action`
-5. `verify_outcome`
+3. `workspace_inspect`
+4. `draft_action`
+5. `workspace_inspect`
+6. `execute_action`
+7. `verify_outcome`
 
 ---
 

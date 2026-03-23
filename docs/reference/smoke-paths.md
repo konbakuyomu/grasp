@@ -60,7 +60,7 @@ Expected handoff primitive output:
 ## 4. Authenticated Workspace Thread
 
 - URL: a logged-in dynamic workspace such as a chat thread or inbox
-- Tools to call: `entry` -> `continue` -> `workspace_inspect` -> `select_live_item` -> `draft_action` -> `execute_action(mode=preview|confirm)` -> `verify_outcome`
+- Tools to call: `entry` -> `continue` -> `workspace_inspect` -> `select_live_item` -> `workspace_inspect` -> `draft_action` -> `workspace_inspect` -> `execute_action(mode=preview|confirm)` -> `verify_outcome`
 
 Expected:
 
@@ -69,8 +69,8 @@ Expected:
 | `entry` | `direct` or `warmup` | session-aware entry result | trust-aware next step |
 | `continue` | direct or gated depending on page | route into the workspace-task flow | when the page is a workspace, `suggested_next_action: workspace_inspect` |
 | `workspace_inspect` | `direct` | `task_kind: workspace`, live items, composer state, and blockers are present | `can_continue: true`, `suggested_next_action: select_live_item` or `draft_action` depending on state |
-| `select_live_item` | `direct` | the active item changes by semantic label | `can_continue: true`, `suggested_next_action: draft_action` |
-| `draft_action` | `direct` | draft text is written without sending | `can_continue: true`, `suggested_next_action: execute_action` |
+| `select_live_item` | `direct` | the active item changes by semantic label | `can_continue: true`, `suggested_next_action: workspace_inspect` |
+| `draft_action` | `direct` | draft text is written without sending | `can_continue: true`, `suggested_next_action: workspace_inspect` |
 | `execute_action(mode=preview)` | `direct` | preview is returned, send is not clicked | `can_continue: true`, `suggested_next_action: verify_outcome` |
 | `execute_action(mode=confirm)` | `direct` | the send action only runs after explicit confirmation | `can_continue: true`, `suggested_next_action: verify_outcome` |
 | `verify_outcome` | `direct` | delivery or the next stable post-send state is reported | `can_continue: true`, `suggested_next_action` points to the next remaining action |
@@ -98,6 +98,6 @@ Expected:
 | Tool | Expected status | Expected result | Expected continuation |
 |---|---|---|---|
 | `entry` | `gated` or `handoff_required` | no `result` payload | `can_continue: false`, `suggested_next_action: request_handoff` |
-| `continue` | `handoff_required` or `direct` after resume | continuation evidence is returned | when the page is a workspace, `suggested_next_action: workspace_inspect` |
+| `continue` | `handoff_required` or `resumed` after resume | continuation evidence is returned | when the page is a workspace, `suggested_next_action: workspace_inspect` |
 | `resume_after_handoff` | `resumed_verified` or `resumed_unverified` | the resumed page stays usable without restarting the browser session | the next step should be explicit |
 | `workspace_inspect` | `direct` | workspace state is visible again | `can_continue: true`, `suggested_next_action` matches the current workspace state |

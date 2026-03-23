@@ -149,8 +149,10 @@ args = ["-y", "grasp"]
 
 ## 动态认证任务流
 
-当当前页面是动态认证 workspace 时，使用 `workspace_inspect -> select_live_item -> draft_action -> execute_action -> verify_outcome`。
-默认情况下，Grasp 会先草拟内容，对不可逆操作要求显式确认，并验证 workspace 是否真的进入了下一状态。
+当当前页面是动态认证 workspace 时，先用 `workspace_inspect` 查看当前状态和下一步建议。
+典型循环是 `workspace_inspect -> select_live_item -> workspace_inspect -> draft_action ->
+workspace_inspect -> execute_action -> verify_outcome`。默认情况下，Grasp 会先草拟内容，
+对不可逆操作要求显式确认，并验证 workspace 是否真的进入了下一状态。
 
 Workspace 任务参考：[docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 

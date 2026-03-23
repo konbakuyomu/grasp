@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { registerTools } from '../../src/server/tools.js';
 import { registerWorkspaceTools } from '../../src/server/tools.workspace.js';
 
 test('workspace_inspect returns task_kind workspace with live items and composer state', async () => {
@@ -1065,4 +1066,24 @@ test('verify_outcome preserves blocked and gated safety behavior without mutatin
     assert.deepEqual(state, before);
     assert.deepEqual(mutations, []);
   }
+});
+
+test('registerTools registers workspace tools after form tools and before strategy tools', () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push(name); } };
+
+  registerTools(server, {
+    pageState: { currentRole: 'workspace', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'idle' },
+  });
+
+  const formIndex = calls.indexOf('form_inspect');
+  const workspaceIndex = calls.indexOf('workspace_inspect');
+  const strategyIndex = calls.indexOf('preheat_session');
+
+  assert.ok(formIndex >= 0);
+  assert.ok(workspaceIndex >= 0);
+  assert.ok(strategyIndex >= 0);
+  assert.ok(formIndex < workspaceIndex);
+  assert.ok(workspaceIndex < strategyIndex);
 });

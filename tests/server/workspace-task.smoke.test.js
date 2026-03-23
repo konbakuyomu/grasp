@@ -78,8 +78,10 @@ test('authenticated workspace thread summary plus item select and draft', async 
   assert.equal(inspect.meta.continuation.suggested_next_action, 'select_live_item');
   assert.equal(selectLiveItem.meta.result.status, 'selected');
   assert.equal(selectLiveItem.meta.result.selected_item.label, '李女士');
+  assert.equal(selectLiveItem.meta.continuation.suggested_next_action, 'workspace_inspect');
   assert.equal(draftAction.meta.result.status, 'drafted');
   assert.equal(draftAction.meta.result.snapshot.composer.draft_present, true);
+  assert.equal(draftAction.meta.continuation.suggested_next_action, 'workspace_inspect');
 });
 
 test('guarded workspace execute preview plus verified outcome', async () => {

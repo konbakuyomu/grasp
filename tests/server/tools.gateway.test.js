@@ -283,6 +283,34 @@ test('continue suggests workspace_inspect on direct workspace pages', async () =
   assert.equal(result.meta.continuation.suggested_next_action, 'workspace_inspect');
 });
 
+test('continue returns resumed workspace guidance with workspace_inspect as the next step', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com/workspace/resumed',
+    title: () => 'Workspace',
+  });
+  const state = {
+    pageState: { currentRole: 'workspace', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'resumed_verified', expected_url_contains: 'example.com' },
+  };
+
+  registerGatewayTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+  });
+
+  const continueTool = calls.find((tool) => tool.name === 'continue');
+  const result = await continueTool.handler();
+
+  assert.equal(result.meta.status, 'resumed');
+  assert.equal(result.meta.continuation.can_continue, true);
+  assert.equal(result.meta.continuation.suggested_next_action, 'workspace_inspect');
+});
+
 test('smoke: entry returns direct on a direct page', async () => {
   const calls = [];
   const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
