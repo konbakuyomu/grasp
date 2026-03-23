@@ -202,12 +202,12 @@ function getRecoveryHint(selectionWindow, liveItems, detailPanel) {
   return null;
 }
 
-function getOutcomeSignals(snapshot, composer, activeItem, detailAlignment) {
+function getOutcomeSignals(snapshot, composer, activeItem, detailAlignment, selectionWindow) {
   const bodyText = pickText(snapshot, 'bodyText', 'body_text').toLowerCase();
   const delivered = bodyText.includes('已发送') || bodyText.includes('发送成功') || hasEnglishSuccessSignal(bodyText);
   const composerCleared = delivered;
   const activeItemStable = detailAlignment !== undefined
-    ? detailAlignment === 'aligned'
+    ? detailAlignment === 'aligned' && selectionWindow === 'visible'
     : !!activeItem && getDetailAlignment(activeItem, getDetailPanel(snapshot)) === 'aligned';
 
   return {
@@ -240,7 +240,7 @@ export function summarizeWorkspaceSnapshot(snapshot = {}) {
   const detailAlignment = rawDetailAlignment !== undefined ? rawDetailAlignment : getDetailAlignment(activeItem, detailPanel);
   const selectionWindow = rawSelectionWindow !== undefined ? rawSelectionWindow : getSelectionWindow(activeItem, detailPanel, liveItems);
   const recoveryHint = rawRecoveryHint !== undefined ? rawRecoveryHint : getRecoveryHint(selectionWindow, liveItems, detailPanel);
-  const outcomeSignals = rawOutcomeSignals !== undefined ? rawOutcomeSignals : getOutcomeSignals(snapshot, composer, activeItem, detailAlignment);
+  const outcomeSignals = rawOutcomeSignals !== undefined ? rawOutcomeSignals : getOutcomeSignals(snapshot, composer, activeItem, detailAlignment, selectionWindow);
   const summary = getSummaryString({
     workspaceSurface,
     activeItem,

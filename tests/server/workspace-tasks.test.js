@@ -308,3 +308,15 @@ test('summarizeWorkspaceSnapshot keeps selection window not_found with only raw 
 
   assert.equal(summary.selection_window, 'not_found');
 });
+
+test('summarizeWorkspaceSnapshot keeps active item unstable when selection window is not_found', () => {
+  const summary = summarizeWorkspaceSnapshot({
+    active_item: { label: 'Thread A', normalized_label: 'thread a', hint_id: 'L1', selected: true },
+    detail_alignment: 'aligned',
+    blocking_modals: [],
+    loading_shell: false,
+  });
+
+  assert.equal(summary.selection_window, 'not_found');
+  assert.equal(summary.outcome_signals.active_item_stable, false);
+});
