@@ -55,7 +55,8 @@ function normalizeWorkspaceSnapshot(snapshot) {
   const summary = summarizeWorkspaceSnapshot(snapshot);
   return {
     ...snapshot,
-    ...summary,
+    summary: snapshot.summary !== undefined ? snapshot.summary : summary,
+    summary_text: summary.summary,
     outcome_signals: summary.outcome_signals,
     loading_shell: summary.loading_shell,
     workspace_surface: summary.workspace_surface,
@@ -246,7 +247,7 @@ export async function verifyActionOutcome({
   }
 
   if (kind === 'draft_action' || expectedText !== undefined) {
-    return verifyTypeResult({
+    const typeResult = await verifyTypeResult({
       page,
       expectedText: expectedText ?? '',
       allowPageChange,
@@ -254,6 +255,28 @@ export async function verifyActionOutcome({
       prevDomRevision,
       newDomRevision,
     });
+
+    if (typeResult.ok) {
+      return typeResult;
+    }
+
+    const composer = getComposer(snapshot);
+    const draftText = compactText(composer?.draft_text ?? composer?.draftText ?? '');
+    if (composer?.draft_present === true && draftText === compactText(expectedText)) {
+      return {
+        ok: true,
+        evidence: {
+          kind,
+          target,
+          composer_kind: composer.kind ?? null,
+          draft_present: true,
+          draft_text: draftText,
+          summary: snapshot ? pick(snapshot, 'summary', 'summary', null) : null,
+        },
+      };
+    }
+
+    return typeResult;
   }
 
   if (hintId) {

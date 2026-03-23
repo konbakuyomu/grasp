@@ -59,6 +59,24 @@ test('executeGuardedAction refreshes and persists a snapshot with outcome signal
       composer: { kind: 'chat_composer', draft_present: false },
       blocking_modals: [],
       loading_shell: false,
+      summary: {
+        workspace_surface: 'composer',
+        active_item_label: null,
+        draft_present: false,
+        loading_shell: false,
+        blocking_modals: [],
+        blocking_modal_count: 0,
+        blocking_modal_labels: [],
+        detail_alignment: 'unknown',
+        selection_window: 'not_found',
+        recovery_hint: 'reinspect_workspace',
+        outcome_signals: {
+          delivered: false,
+          composer_cleared: false,
+          active_item_stable: false,
+        },
+        summary: 'surface=composer active=none draft=empty blockers=0 loading=no detail=unknown selection=not_found',
+      },
     },
     refreshSnapshot: async () => ({
       body_text: '已发送',
@@ -66,6 +84,24 @@ test('executeGuardedAction refreshes and persists a snapshot with outcome signal
       composer: { kind: 'chat_composer', draft_present: false },
       blocking_modals: [],
       loading_shell: false,
+      summary: {
+        workspace_surface: 'composer',
+        active_item_label: null,
+        draft_present: false,
+        loading_shell: false,
+        blocking_modals: [],
+        blocking_modal_count: 0,
+        blocking_modal_labels: [],
+        detail_alignment: 'unknown',
+        selection_window: 'not_found',
+        recovery_hint: 'reinspect_workspace',
+        outcome_signals: {
+          delivered: false,
+          composer_cleared: false,
+          active_item_stable: false,
+        },
+        summary: 'surface=composer active=none draft=empty blockers=0 loading=no detail=unknown selection=not_found',
+      },
     }),
     persistSnapshot: async (snapshot) => {
       persisted.push(snapshot);
@@ -85,6 +121,9 @@ test('executeGuardedAction refreshes and persists a snapshot with outcome signal
   assert.equal(persisted[0].outcome_signals.delivered, true);
   assert.equal(runtime.snapshot.outcome_signals.delivered, true);
   assert.equal(runtime.snapshot.body_text, '已发送');
+  assert.equal(typeof runtime.snapshot.summary, 'object');
+  assert.equal(runtime.snapshot.summary.summary, 'surface=composer active=none draft=empty blockers=0 loading=no detail=unknown selection=not_found');
+  assert.equal(runtime.snapshot.summary_text, 'surface=composer active=none draft=empty blockers=0 loading=no detail=unknown selection=not_found');
 });
 
 test('verifyActionOutcome returns LOADING_PENDING when the fresh snapshot is loading', async () => {
@@ -172,9 +211,9 @@ test('selectItemByHint succeeds from fresh selection evidence after refresh', as
   const result = await selectItemByHint(runtime, '李女士');
 
   assert.equal(result.ok, true);
-  assert.equal(result.snapshot.active_item_label, '李女士');
-  assert.equal(result.snapshot.selection_window, 'visible');
-  assert.equal(persisted[0].active_item_label, '李女士');
+  assert.equal(result.snapshot.summary.active_item_label, '李女士');
+  assert.equal(result.snapshot.summary.selection_window, 'visible');
+  assert.equal(persisted[0].summary.active_item_label, '李女士');
 });
 
 test('selectItemByHint returns ambiguous_item when multiple live targets match', async () => {
@@ -251,6 +290,55 @@ test('draftIntoComposer does not send when pressEnter is requested', async () =>
       },
     }),
   }, '你好', { pressEnter: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [{ hintId: 'C1', text: '你好', pressEnter: false }]);
+});
+
+test('draftIntoComposer succeeds when fresh composer evidence confirms the draft write', async () => {
+  const calls = [];
+  const result = await draftIntoComposer({
+    page: createFakePage({
+      url: () => 'https://example.test/workspace',
+      evaluate: async (fn, ...args) => {
+        const previousDocument = globalThis.document;
+        globalThis.document = {
+          activeElement: {
+            tagName: 'DIV',
+            innerText: '',
+            textContent: '',
+            value: '',
+            isContentEditable: false,
+          },
+        };
+        try {
+          return fn(...args);
+        } finally {
+          globalThis.document = previousDocument;
+        }
+      },
+    }),
+    snapshot: {
+      workspace_surface: 'composer',
+      loading_shell: false,
+      composer: { kind: 'chat_composer', hint_id: 'C1', draft_present: false },
+      blocking_modals: [],
+    },
+    typeByHintId: async (page, hintId, text, pressEnter) => {
+      calls.push({ hintId, text, pressEnter });
+    },
+    refreshSnapshot: async () => ({
+      workspace_surface: 'composer',
+      loading_shell: false,
+      composer: { kind: 'chat_composer', hint_id: 'C1', draft_present: true, draft_text: '你好' },
+      blocking_modals: [],
+      outcome_signals: {
+        delivered: false,
+        composer_cleared: false,
+        active_item_stable: false,
+      },
+    }),
+  }, '你好');
 
   assert.equal(result.ok, true);
   assert.deepEqual(calls, [{ hintId: 'C1', text: '你好', pressEnter: false }]);
