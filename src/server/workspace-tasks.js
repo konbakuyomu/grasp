@@ -217,6 +217,38 @@ function getOutcomeSignals(snapshot, composer, activeItem, detailAlignment, sele
   };
 }
 
+function isBlockedHandoffState(handoffState) {
+  return handoffState === 'handoff_required'
+    || handoffState === 'handoff_in_progress'
+    || handoffState === 'awaiting_reacquisition';
+}
+
+export function getWorkspaceStatus(state) {
+  const handoffState = state.handoff?.state ?? 'idle';
+  if (isBlockedHandoffState(handoffState)) {
+    return 'handoff_required';
+  }
+
+  return state.pageState?.riskGateDetected ? 'gated' : 'direct';
+}
+
+export function getWorkspaceContinuation(state, suggestedNextAction) {
+  const handoffState = state.handoff?.state ?? 'idle';
+  if (getWorkspaceStatus(state) !== 'direct') {
+    return {
+      can_continue: false,
+      suggested_next_action: 'request_handoff',
+      handoff_state: handoffState,
+    };
+  }
+
+  return {
+    can_continue: true,
+    suggested_next_action: suggestedNextAction,
+    handoff_state: handoffState,
+  };
+}
+
 function getSummaryString({ workspaceSurface, activeItem, composer, blockingModals, loadingShell, detailAlignment, selectionWindow }) {
   const activeLabel = activeItem?.label ?? 'none';
   const draftState = composer?.draft_present ? 'draft' : 'empty';
