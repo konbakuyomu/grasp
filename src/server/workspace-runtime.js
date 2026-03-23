@@ -175,25 +175,33 @@ export async function verifySelectionResult({
   const activeItem = pick(snapshot, 'activeItem', 'active_item', null);
   const activeLabel = compactText(activeItem?.label ?? summary.active_item_label ?? '');
   const activeMatch = normalizeLabel(activeLabel) === normalizedLabel;
+  const activeHintMatch = compactText(activeItem?.hint_id) && compactText(activeItem?.hint_id) === compactText(item?.hint_id);
   const selectedMatch = liveItems.some((liveItem) => (
     liveItem?.selected === true
     && normalizeLabel(liveItem?.normalized_label ?? liveItem?.label) === normalizedLabel
     && compactText(liveItem?.hint_id) === compactText(item?.hint_id)
   ));
+  const sameLabelCount = liveItems.filter((liveItem) => (
+    normalizeLabel(liveItem?.normalized_label ?? liveItem?.label) === normalizedLabel
+  )).length;
+  const identitySensitive = compactText(item?.hint_id) && sameLabelCount > 1;
   const detailAlignment = pick(snapshot, 'detailAlignment', 'detail_alignment', summary.detail_alignment);
   const selectionWindow = pick(snapshot, 'selectionWindow', 'selection_window', summary.selection_window);
 
-  if ((activeMatch || selectedMatch) && detailAlignment !== 'mismatch' && selectionWindow !== 'not_found') {
+  if ((selectedMatch || activeHintMatch || (activeMatch && !identitySensitive)) && detailAlignment !== 'mismatch' && selectionWindow !== 'not_found') {
     return {
       ok: true,
       evidence: {
         target: item?.label ?? null,
         hint_id: item?.hint_id ?? null,
         active_item_label: activeLabel || null,
+        active_item_hint_id: compactText(activeItem?.hint_id) || null,
         detail_alignment: detailAlignment,
         selection_window: selectionWindow,
         active_match: activeMatch,
+        active_hint_match: activeHintMatch,
         selected_match: selectedMatch,
+        identity_sensitive: identitySensitive,
         summary: summary.summary,
       },
     };
@@ -208,10 +216,13 @@ export async function verifySelectionResult({
       target: item?.label ?? null,
       hint_id: item?.hint_id ?? null,
       active_item_label: activeLabel || null,
+      active_item_hint_id: compactText(activeItem?.hint_id) || null,
       detail_alignment: detailAlignment,
       selection_window: selectionWindow,
       active_match: activeMatch,
+      active_hint_match: activeHintMatch,
       selected_match: selectedMatch,
+      identity_sensitive: identitySensitive,
       summary: summary.summary,
     },
   };
