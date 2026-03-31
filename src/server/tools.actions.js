@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { getActivePage, navigateTo } from '../layer1-bridge/chrome.js';
+import { getActivePage, getTabs, navigateTo, switchTab } from '../layer1-bridge/chrome.js';
 import { clickByHintId, typeByHintId, hoverByHintId, pressKey, watchElement, scroll } from '../layer3-action/actions.js';
 import { errorResponse, textResponse } from './responses.js';
 import { describeMode, syncPageState } from './state.js';
@@ -10,10 +10,12 @@ import { TYPE_FAILED } from './error-codes.js';
 import { runVerifiedAction } from '../grasp/verify/pipeline.js';
 import { readHandoffState } from '../grasp/handoff/persist.js';
 import { extractMainContent } from './content.js';
-import { readBossFastPath } from './fast-path-router.js';
+import { readFastPath } from './fast-path-router.js';
 import { buildPageProjection } from './page-projection.js';
 import { selectEngine } from './engine-selection.js';
 import { readLatestRouteDecision } from './audit.js';
+import { readBrowserInstance } from '../runtime/browser-instance.js';
+import { buildRuntimeConfirmationSuccessResponse, getRuntimeConfirmationSummary, requireConfirmedRuntimeInstance, storeRuntimeConfirmation } from './runtime-confirmation.js';
 
 function buildStructuredError(message, normalizedHintId, verdict) {
   const meta = {
@@ -32,11 +34,140 @@ function createRebuildHints(page, state) {
   };
 }
 
+function normalizeQuery(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function listUserTabs(tabs = [], activeUrl) {
+  return tabs
+    .filter((tab) => tab.isUser)
+    .map((tab) => ({
+      ...tab,
+      active: tab.url === activeUrl,
+    }));
+}
+
+function matchVisibleTabs(tabs = [], { query = '', title_contains = '', url_contains = '' } = {}) {
+  const normalizedQuery = normalizeQuery(query);
+  const normalizedTitle = normalizeQuery(title_contains);
+  const normalizedUrl = normalizeQuery(url_contains);
+
+  return tabs.filter((tab) => {
+    const title = normalizeQuery(tab.title);
+    const url = normalizeQuery(tab.url);
+    if (normalizedTitle && !title.includes(normalizedTitle)) return false;
+    if (normalizedUrl && !url.includes(normalizedUrl)) return false;
+    if (!normalizedQuery) return true;
+    return title.includes(normalizedQuery) || url.includes(normalizedQuery);
+  });
+}
+
 export function registerActionTools(server, state, deps = {}) {
   const getPage = deps.getActivePage ?? getActivePage;
+  const listTabs = deps.getTabs ?? getTabs;
+  const activateTab = deps.switchTab ?? switchTab;
   const syncState = deps.syncPageState ?? syncPageState;
   const extractContent = deps.extractMainContent ?? extractMainContent;
   const navigate = deps.navigateTo ?? navigateTo;
+  const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
+  const readFastPathContent = deps.readFastPath ?? readFastPath;
+
+  server.registerTool(
+    'list_visible_tabs',
+    {
+      description: 'List user-visible tabs in the current runtime and mark which one is active.',
+      inputSchema: {},
+    },
+    async () => {
+      const page = await getPage({ state });
+      const tabs = listUserTabs(await listTabs(), page.url());
+
+      return textResponse([
+        `Visible tabs: ${tabs.length}`,
+        '',
+        ...tabs.map((tab) => `[${tab.index}] ${tab.title}${tab.active ? ' (active)' : ''}\n${tab.url}`),
+      ], { tabs });
+    }
+  );
+
+  server.registerTool(
+    'select_visible_tab',
+    {
+      description: 'Bring a visible runtime tab to the front by matching its title or URL fragment.',
+      inputSchema: {
+        query: z.string().optional().describe('Text fragment that may match either the tab title or the tab URL'),
+        title_contains: z.string().optional().describe('Optional title fragment to narrow tab selection'),
+        url_contains: z.string().optional().describe('Optional URL fragment to narrow tab selection'),
+      },
+    },
+    async ({ query = '', title_contains = '', url_contains = '' } = {}) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'select_visible_tab');
+      if (confirmationError) return confirmationError;
+
+      const tabs = listUserTabs(await listTabs());
+      const matches = matchVisibleTabs(tabs, { query, title_contains, url_contains });
+
+      if (matches.length === 0) {
+        return errorResponse('No visible tab matched the provided query.', {
+          error_code: 'TAB_NOT_FOUND',
+          retryable: true,
+          suggested_next_step: 'list_visible_tabs',
+          tabs,
+        });
+      }
+
+      if (matches.length > 1) {
+        return errorResponse('Multiple visible tabs matched the provided query.', {
+          error_code: 'TAB_AMBIGUOUS',
+          retryable: true,
+          suggested_next_step: 'list_visible_tabs',
+          candidates: matches,
+        });
+      }
+
+      const selectedTab = matches[0];
+      const page = await activateTab(selectedTab.index);
+      await syncState(page, state, { force: true });
+
+      return textResponse([
+        `Selected tab [${selectedTab.index}]: ${selectedTab.title}`,
+        `URL: ${selectedTab.url}`,
+        `Page role: ${state.pageState?.currentRole ?? 'unknown'}`,
+      ], { tab: selectedTab });
+    }
+  );
+
+  server.registerTool(
+    'confirm_runtime_instance',
+    {
+      description: 'Confirm the current runtime browser instance before performing page-changing actions.',
+      inputSchema: {
+        display: z.enum(['windowed', 'headless', 'unknown']).describe('The runtime instance mode you expect to act against'),
+      },
+    },
+    async ({ display }) => {
+      const instance = await getBrowserInstance();
+      if (!instance) {
+        return errorResponse('Runtime instance unavailable. Call get_status and try again.');
+      }
+      if ((instance.display ?? 'unknown') !== display) {
+        return errorResponse([
+          'Runtime instance mismatch.',
+          `Expected: ${display}`,
+          `Actual: ${instance.display ?? 'unknown'}`,
+          ...(instance.browser ? [`Browser: ${instance.browser}`] : []),
+        ], {
+          error_code: 'INSTANCE_CONFIRMATION_MISMATCH',
+          retryable: true,
+          suggested_next_step: 'get_status',
+          instance,
+        });
+      }
+      const confirmation = storeRuntimeConfirmation(state, instance);
+      return buildRuntimeConfirmationSuccessResponse(confirmation, instance);
+    }
+  );
 
   server.registerTool(
     'navigate',
@@ -46,6 +177,9 @@ export function registerActionTools(server, state, deps = {}) {
     },
     async ({ url }) => {
       try {
+        const instance = await getBrowserInstance();
+        const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'navigate');
+        if (confirmationError) return confirmationError;
         const page = await navigate(url, { state });
         await syncState(page, state, { force: true });
         await audit('navigate', url, null, state);
@@ -76,6 +210,8 @@ export function registerActionTools(server, state, deps = {}) {
         const pageState = state.pageState ?? {};
         const route = state.lastRouteTrace ?? await readLatestRouteDecision();
         const { mode, detail } = describeMode(state);
+        const instance = await getBrowserInstance();
+        const confirmation = getRuntimeConfirmationSummary(state, instance);
 
         return textResponse([
           'Grasp is connected',
@@ -84,6 +220,10 @@ export function registerActionTools(server, state, deps = {}) {
           `URL: ${page.url()}`,
           `Mode: ${mode}`,
           `  ${detail}`,
+          ...(instance?.browser ? [`Browser instance: ${instance.browser}`] : []),
+          ...(instance?.display ? [`Instance mode: ${instance.display}`] : []),
+          ...(instance?.warning ? [`Instance warning: ${instance.warning}`] : []),
+          `Instance confirmed: ${confirmation.confirmed ? 'yes' : 'no'}`,
           `Hint Map: ${state.hintMap?.length ?? 0} elements cached`,
           `Page role: ${pageState.currentRole ?? 'unknown'}`,
           `Grasp confidence: ${pageState.graspConfidence ?? 'unknown'}`,
@@ -96,7 +236,7 @@ export function registerActionTools(server, state, deps = {}) {
           ...(route?.next_step ? [`Route next step: ${route.next_step}`] : []),
           `Handoff: ${handoff.state}`,
           ...(handoff.reason ? [`  reason: ${handoff.reason}`] : []),
-        ], { handoff, pageState, ...(route ? { route } : {}) });
+        ], { handoff, pageState, ...(instance ? { instance } : {}), ...(route ? { route } : {}) });
       } catch (err) {
         return errorResponse(`Grasp is NOT connected.\n${err.message}`);
       }
@@ -116,7 +256,7 @@ export function registerActionTools(server, state, deps = {}) {
 
       if (selection.engine === 'runtime') {
         await syncState(page, state, { force: true });
-        fastPath = await readBossFastPath(page);
+        fastPath = await readFastPathContent(page);
       } else {
         await syncState(page, state);
       }
@@ -179,6 +319,9 @@ export function registerActionTools(server, state, deps = {}) {
     },
     async ({ hint_id }) => {
       const normalizedHintId = String(hint_id).trim();
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'click');
+      if (confirmationError) return confirmationError;
       const page = await getPage({ state });
       await syncPageState(page, state);
       const prevDomRevision = state.pageState?.domRevision ?? 0;
@@ -233,6 +376,9 @@ export function registerActionTools(server, state, deps = {}) {
     },
     async ({ hint_id, text, press_enter = false }) => {
       const normalizedHintId = String(hint_id).trim();
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'type');
+      if (confirmationError) return confirmationError;
       const page = await getPage({ state });
       await syncPageState(page, state);
       const prevDomRevision = state.pageState?.domRevision ?? 0;
@@ -285,6 +431,9 @@ export function registerActionTools(server, state, deps = {}) {
     },
     async ({ hint_id }) => {
       const normalizedHintId = String(hint_id).trim();
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'hover');
+      if (confirmationError) return confirmationError;
       const page = await getPage({ state });
       await syncPageState(page, state);
       const prevUrl = page.url();
@@ -325,6 +474,9 @@ export function registerActionTools(server, state, deps = {}) {
       },
     },
     async ({ key }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'press_key');
+      if (confirmationError) return confirmationError;
       const page = await getPage({ state });
       await syncPageState(page, state);
       await pressKey(page, key);
@@ -371,6 +523,9 @@ export function registerActionTools(server, state, deps = {}) {
       },
     },
     async ({ direction, amount = 600 }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'scroll');
+      if (confirmationError) return confirmationError;
       const page = await getPage({ state });
       await syncPageState(page, state);
       await scroll(page, direction, amount);

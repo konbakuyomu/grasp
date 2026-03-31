@@ -4,20 +4,11 @@ import { homedir, platform } from 'os';
 import { readConfig, writeConfig } from './config.js';
 import { detectChromePath } from './detect-chrome.js';
 import { detectClients, autoConfigureAll } from './auto-configure.js';
+import { readBrowserInstance } from '../runtime/browser-instance.js';
 
 const STEP_OK   = '[ok]';
 const STEP_WAIT = '[..]';
 const STEP_FAIL = '[!!]';
-
-async function pingChrome(cdpUrl, timeout = 1500) {
-  try {
-    const res = await fetch(`${cdpUrl}/json/version`, { signal: AbortSignal.timeout(timeout) });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
 
 async function launchChrome(chromePath, cdpUrl) {
   const port = new URL(cdpUrl).port || '9222';
@@ -34,7 +25,7 @@ async function launchChrome(chromePath, cdpUrl) {
   // Wait up to 8s
   for (let i = 0; i < 16; i++) {
     await new Promise(r => setTimeout(r, 500));
-    const info = await pingChrome(cdpUrl, 800);
+    const info = await readBrowserInstance(cdpUrl, { timeout: 800 });
     if (info) return info;
   }
   return null;
@@ -48,7 +39,7 @@ export async function runConnect() {
   console.log('');
   console.log('  Grasp Runtime Setup');
   console.log('  ' + '─'.repeat(44));
-  console.log('  Bring a real Chrome session into the runtime.');
+  console.log('  Bring a Chrome CDP session into the runtime.');
   console.log('  One URL, one best path.');
   console.log('');
 
@@ -69,11 +60,13 @@ export async function runConnect() {
   // Step 2: check or launch Chrome with CDP
   console.log('');
   console.log(`  ${STEP_WAIT} Ensuring browser runtime at ${cdpUrl} ...`);
-  let chromeInfo = await pingChrome(cdpUrl);
+  let chromeInfo = await readBrowserInstance(cdpUrl);
+  let launchedDedicatedProfile = false;
 
   if (!chromeInfo) {
     console.log(`  ${STEP_WAIT} Chrome not running, launching dedicated profile...`);
     chromeInfo = await launchChrome(chromePath, cdpUrl);
+    launchedDedicatedProfile = chromeInfo !== null;
   }
 
   if (!chromeInfo) {
@@ -89,8 +82,15 @@ export async function runConnect() {
     process.exit(1);
   }
 
-  console.log(`  ${STEP_OK} Browser runtime ready  (${chromeInfo.Browser})`);
+  console.log(`  ${STEP_OK} Browser runtime ready  (${chromeInfo.browser ?? 'unknown'})`);
   console.log(`       Profile: ${userDataDir}`);
+  console.log(`       Instance: ${chromeInfo.display === 'headless' ? 'headless browser' : chromeInfo.display === 'windowed' ? 'windowed browser' : 'unknown browser mode'}`);
+  if (launchedDedicatedProfile) {
+    console.log('       Scope: dedicated chrome-grasp profile, not an arbitrary existing browser session');
+  }
+  if (chromeInfo.warning) {
+    console.log(`       Warning: ${chromeInfo.warning}`);
+  }
 
   // Step 3: save cdpUrl to config
   await writeConfig({ cdpUrl });

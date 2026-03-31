@@ -8,6 +8,8 @@ import { requestHandoff } from '../grasp/handoff/events.js';
 import { attachHandoffTaskMetadata, readHandoffState, writeHandoffState } from '../grasp/handoff/persist.js';
 import { buildCheckpointHandoffSuggestion, buildSessionTrustPreflight } from './continuity.js';
 import { createEntryOrchestrator } from './entry-orchestrator.js';
+import { readBrowserInstance } from '../runtime/browser-instance.js';
+import { requireConfirmedRuntimeInstance } from './runtime-confirmation.js';
 
 function getEntryStrategies(preflight) {
   if (preflight.recommended_entry_strategy === 'resume_existing_session') {
@@ -79,6 +81,7 @@ export async function enterWithStrategy({ url, state, deps = {} }) {
 
 export function registerStrategyTools(server, state, deps = {}) {
   const getPage = deps.getActivePage ?? getActivePage;
+  const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
 
   server.registerTool(
     'preheat_session',
@@ -89,6 +92,9 @@ export function registerStrategyTools(server, state, deps = {}) {
       },
     },
     async ({ url }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'preheat_session');
+      if (confirmationError) return confirmationError;
       let origin = url;
       try {
         const parsed = new URL(url);
@@ -118,6 +124,9 @@ export function registerStrategyTools(server, state, deps = {}) {
       },
     },
     async ({ url }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'navigate_with_strategy');
+      if (confirmationError) return confirmationError;
       const outcome = await enterWithStrategy({ url, state });
       const { preflight, handoff, pageState } = outcome;
 

@@ -1189,3 +1189,41 @@ test('registerTools registers workspace tools after form tools and before strate
   assert.ok(formIndex < workspaceIndex);
   assert.ok(workspaceIndex < strategyIndex);
 });
+
+test('draft_action is blocked until the runtime instance is explicitly confirmed', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const state = {
+    pageState: { currentRole: 'workspace', workspaceSurface: 'thread', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'idle' },
+  };
+
+  registerWorkspaceTools(server, state, {
+    getActivePage: async () => ({ title: async () => 'BOSS直聘', url: () => 'https://www.zhipin.com/web/geek/chat?id=1' }),
+    syncPageState: async () => undefined,
+    getBrowserInstance: async () => ({
+      browser: 'Chrome/136.0.7103.114',
+      display: 'windowed',
+      warning: null,
+    }),
+    collectVisibleWorkspaceSnapshot: async () => ({
+      workspace_surface: 'thread',
+      live_items: [{ label: '李女士', selected: true }],
+      active_item: { label: '李女士' },
+      composer: { kind: 'chat_composer', draft_present: false },
+      action_controls: [{ label: '发送', action_kind: 'send' }],
+      blocking_modals: [],
+      loading_shell: false,
+      summary: { active_item_label: '李女士', draft_present: false, loading_shell: false },
+    }),
+    draftWorkspaceAction: async () => {
+      throw new Error('draftWorkspaceAction should not run before confirmation');
+    },
+  });
+
+  const tool = calls.find((entry) => entry.name === 'draft_action');
+  const result = await tool.handler({ text: '你好' });
+
+  assert.match(result.content[0].text, /Runtime instance confirmation required/);
+  assert.equal(result.meta.error_code, 'INSTANCE_CONFIRMATION_REQUIRED');
+});

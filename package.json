@@ -1,7 +1,7 @@
 {
   "name": "grasp",
-  "version": "0.6.1",
-  "description": "Route-aware Agent Web Runtime with persistent sessions, verified actions, and recoverable handoff.",
+  "version": "0.6.3",
+  "description": "Visible AI browser runtime with persistent sessions, verified actions, structured extraction, and recoverable handoff.",
   "main": "index.js",
   "bin": {
     "grasp": "./index.js"
@@ -23,6 +23,7 @@
     "test:watch": "node --test --watch"
   },
   "dependencies": {
+    "@chenglou/pretext": "^0.0.3",
     "@modelcontextprotocol/sdk": "^1.8.0",
     "playwright-core": "^1.58.2",
     "zod": "^3.25.76"

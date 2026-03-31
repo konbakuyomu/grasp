@@ -14,6 +14,8 @@ import {
   applyReviewedDate,
   previewSubmit,
 } from './form-runtime.js';
+import { readBrowserInstance } from '../runtime/browser-instance.js';
+import { requireConfirmedRuntimeInstance } from './runtime-confirmation.js';
 
 function toGatewayPage(page, state) {
   return {
@@ -177,6 +179,7 @@ async function clickSubmitControl(page, control) {
 export function registerFormTools(server, state, deps = {}) {
   const getPage = deps.getActivePage ?? getActivePage;
   const syncState = deps.syncPageState ?? syncPageState;
+  const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
   const collectSnapshot = deps.collectVisibleFormSnapshot ?? collectVisibleFormSnapshot;
   const fillFields = deps.fillSafeFields ?? fillSafeFields;
   const typeField = deps.typeByHintId ?? typeByHintId;
@@ -230,6 +233,9 @@ export function registerFormTools(server, state, deps = {}) {
       },
     },
     async ({ values }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'fill_form');
+      if (confirmationError) return confirmationError;
       const page = await getPage();
       await syncState(page, state, { force: true });
       const rebuildHints = createRebuildHints(page, state, syncState);
@@ -299,6 +305,9 @@ export function registerFormTools(server, state, deps = {}) {
       },
     },
     async ({ field, value }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'set_option');
+      if (confirmationError) return confirmationError;
       const page = await getPage();
       await syncState(page, state, { force: true });
       const snapshot = await collectSnapshot(page);
@@ -355,6 +364,9 @@ export function registerFormTools(server, state, deps = {}) {
       },
     },
     async ({ field, value }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'set_date');
+      if (confirmationError) return confirmationError;
       const page = await getPage();
       await syncState(page, state, { force: true });
       const snapshot = await collectSnapshot(page);
@@ -452,6 +464,9 @@ export function registerFormTools(server, state, deps = {}) {
       },
     },
     async ({ mode = 'preview', confirmation } = {}) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'safe_submit');
+      if (confirmationError) return confirmationError;
       const page = await getPage();
       await syncState(page, state, { force: true });
       const snapshot = await collectSnapshot(page);

@@ -2,7 +2,7 @@
 
 Public docs for the Grasp route-aware Agent Web Runtime.
 
-Current package release: `v0.6.1`
+Current package release: `v0.6.3`
 
 ---
 
@@ -26,7 +26,11 @@ Core runtime story:
 - one URL, one best path
 - any real webpage can enter the same runtime
 - continuity across login, handoff, and recovery
+- visible runtime boundaries over a confirmed browser instance
 - verified actions against real page state
+- first structured extraction path on top of the same browser runtime
+- batch structured extraction with CSV / JSON exports
+- share artifacts and explainable share cards for human handoff
 - resumed work in the same browser context
 - one interface with public modes over `Runtime Engine` and a thin `Data Engine` read seam
 
@@ -56,6 +60,7 @@ For the canonical product-layer mapping, see [Browser Runtime for Agents](./prod
 
 ## Releases
 
+- [v0.6.3 release notes](./release-notes-v0.6.3.md)
 - [v0.6.1 release notes](./release-notes-v0.6.1.md)
 - [v0.6.0 release notes](./release-notes-v0.6.0.md)
 - [v0.55.0 release notes](./release-notes-v0.55.0.md)

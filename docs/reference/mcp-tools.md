@@ -24,6 +24,10 @@ Public route modes:
 | `entry` | Enter a target URL with an intent and return the route decision: selected mode, evidence, fallback chain, risk, and next step. |
 | `inspect` | Inspect the current page as runtime state and report the current route metadata for the active task. |
 | `extract` | Extract the current page into a usable content payload while staying on the current route. |
+| `extract_structured` | Extract the current page into a field-based record and return JSON / optional Markdown exports while staying on the current route. |
+| `extract_batch` | Visit multiple URLs through the same runtime path, extract structured records, and write CSV / JSON / optional Markdown artifacts. |
+| `share_page` | Export the current page into a shareable Markdown, screenshot, or PDF artifact built from the current page projection. |
+| `explain_share_card` | Explain how Grasp would lay out the current page as a human-facing share card, using Pretext-backed layout estimates when available. |
 | `continue` | Decide the next continuation step without triggering a browser action and report the current route metadata. |
 | `explain_route` | Explain the latest route decision, including mode, fallback, and route evidence. |
 
@@ -31,11 +35,19 @@ Recommended default flow:
 
 1. `entry`
 2. `inspect`
-3. `extract` or `continue`
+3. `extract`, `extract_structured`, `extract_batch`, `share_page`, or `continue`
 4. `explain_route` to read the selected route rationale
 5. if needed, move into handoff and then `resume_after_handoff`
 
 Manual smoke playbook: [docs/reference/smoke-paths.md](./smoke-paths.md)
+
+Fast-path adapters:
+
+- built-in site-specific fast reads now sit behind adapters instead of being hard-coded into the core route loop
+- Grasp loads local adapters from `~/.grasp/site-adapters` by default
+- set `GRASP_SITE_ADAPTER_DIR` when you want a different adapter directory
+- supported entries are `.js` adapters and lightweight `.skill` manifests that point at a `.js` adapter via `entry:` or `adapter:`
+- a `.js` adapter only needs `matches(url)` or `match(url)`, plus `read(page)`
 
 ---
 
@@ -122,6 +134,8 @@ Recommended workspace flow:
 | Tool | What it is for |
 |:---|:---|
 | `navigate` | Direct navigation without the default runtime loop. |
+| `list_visible_tabs` | Enumerate user-visible runtime tabs and mark which one is currently active. |
+| `select_visible_tab` | Bring a runtime tab to the front by matching a title fragment or URL fragment. |
 
 ### Interaction and observation
 

@@ -104,6 +104,118 @@ test('get_status passes state into the active page lookup', async () => {
   assert.equal(receivedArgs.state, state);
 });
 
+test('get_status reports headless instance identity explicitly', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com',
+    title: () => 'Example',
+  });
+  const state = {
+    hintMap: [],
+    pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'idle' },
+  };
+
+  registerActionTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+    getBrowserInstance: async () => ({
+      browser: 'HeadlessChrome/136.0.7103.114',
+      protocolVersion: '1.3',
+      headless: true,
+      display: 'headless',
+      warning: 'Current endpoint is a headless browser, not a visible local browser window.',
+    }),
+  });
+
+  const status = calls.find((tool) => tool.name === 'get_status');
+  const result = await status.handler();
+  const text = result.content[0].text;
+
+  assert.match(text, /Browser instance: HeadlessChrome\/136\.0\.7103\.114/);
+  assert.match(text, /Instance mode: headless/);
+  assert.match(text, /Instance warning: Current endpoint is a headless browser, not a visible local browser window\./);
+  assert.deepEqual(result.meta.instance, {
+    browser: 'HeadlessChrome/136.0.7103.114',
+    protocolVersion: '1.3',
+    headless: true,
+    display: 'headless',
+    warning: 'Current endpoint is a headless browser, not a visible local browser window.',
+  });
+});
+
+test('navigate is blocked until the runtime instance is explicitly confirmed', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const state = {
+    pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'idle' },
+  };
+
+  registerActionTools(server, state, {
+    navigateTo: async () => {
+      throw new Error('navigateTo should not run before confirmation');
+    },
+    getBrowserInstance: async () => ({
+      browser: 'Chrome/136.0.7103.114',
+      protocolVersion: '1.3',
+      headless: false,
+      display: 'windowed',
+      warning: null,
+    }),
+  });
+
+  const navigate = calls.find((tool) => tool.name === 'navigate');
+  const result = await navigate.handler({ url: 'https://example.com' });
+
+  assert.match(result.content[0].text, /Runtime instance confirmation required/);
+  assert.equal(result.meta.error_code, 'INSTANCE_CONFIRMATION_REQUIRED');
+  assert.equal(result.meta.suggested_next_step, 'confirm_runtime_instance');
+});
+
+test('confirm_runtime_instance unlocks actions for the same runtime instance', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const state = {
+    hintMap: [],
+    pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'idle' },
+  };
+  const page = createFakePage({
+    url: () => 'https://example.com',
+    title: () => 'Example',
+  });
+
+  registerActionTools(server, state, {
+    navigateTo: async () => page,
+    syncPageState: async (_page, currentState, options) => {
+      currentState.pageState = state.pageState;
+      assert.deepEqual(options, { force: true });
+      return currentState;
+    },
+    getBrowserInstance: async () => ({
+      browser: 'Chrome/136.0.7103.114',
+      protocolVersion: '1.3',
+      headless: false,
+      display: 'windowed',
+      warning: null,
+    }),
+  });
+
+  const confirmTool = calls.find((tool) => tool.name === 'confirm_runtime_instance');
+  const navigate = calls.find((tool) => tool.name === 'navigate');
+
+  const confirmResult = await confirmTool.handler({ display: 'windowed' });
+  const navigateResult = await navigate.handler({ url: 'https://example.com' });
+
+  assert.match(confirmResult.content[0].text, /Runtime instance confirmed: windowed/);
+  assert.match(navigateResult.content[0].text, /Navigated to: https:\/\/example\.com/);
+});
+
 test('get_page_summary uses the runtime branch for non-BOSS runtime hosts', async () => {
   const calls = [];
   const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };

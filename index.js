@@ -55,7 +55,7 @@ export async function main(argv = process.argv.slice(2)) {
 export function renderHelpText() {
   return `
   Grasp — route-aware Agent Web Runtime
-  Connect Chrome once. Let agents choose a route, verify, hand off, and resume real pages.
+  Connect Chrome once. Let agents work inside a visible browser runtime, extract structured results, and resume real pages.
 
   Usage:
     grasp                  Bootstrap the runtime and connect Chrome for first use
@@ -71,7 +71,10 @@ export function renderHelpText() {
   First runtime steps:
     1. npx grasp           Bootstrap the runtime and connect your AI client
     2. Open any real page  Keep using the dedicated chrome-grasp profile
+                           This runtime profile is separate from arbitrary browser windows you may already have open
     3. Ask your AI         Call get_status / entry(url, intent) / inspect / extract or continue / explain_route
+                           Use extract_structured(fields=[...]) or extract_batch(urls=[...], fields=[...]) for structured exports
+                           Use share_page(format="markdown" | "screenshot" | "pdf") when the result needs a shareable artifact
 `;
 }
 

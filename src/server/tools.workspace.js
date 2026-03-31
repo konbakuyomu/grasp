@@ -6,6 +6,8 @@ import { clickByHintId } from '../layer3-action/actions.js';
 import { syncPageState } from './state.js';
 import { buildWorkspaceVerification, collectVisibleWorkspaceSnapshot, getWorkspaceContinuation, getWorkspaceStatus, summarizeWorkspaceSnapshot } from './workspace-tasks.js';
 import { draftWorkspaceAction, executeWorkspaceAction, selectWorkspaceItem } from './workspace-runtime.js';
+import { readBrowserInstance } from '../runtime/browser-instance.js';
+import { requireConfirmedRuntimeInstance } from './runtime-confirmation.js';
 
 const WORKSPACE_ITEM_SELECTOR = 'li, [role="option"], [role="row"], [role="treeitem"], [data-list-item], [data-thread-item], [data-conversation-item]';
 
@@ -446,6 +448,7 @@ function registerWorkspaceDraftActionTool(server, state, deps) {
   const syncState = deps.syncPageState ?? syncPageState;
   const collectSnapshot = deps.collectVisibleWorkspaceSnapshot ?? collectVisibleWorkspaceSnapshot;
   const draftAction = deps.draftWorkspaceAction ?? draftWorkspaceAction;
+  const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
 
   server.registerTool(
     'draft_action',
@@ -456,6 +459,9 @@ function registerWorkspaceDraftActionTool(server, state, deps) {
       },
     },
     async ({ text }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'draft_action');
+      if (confirmationError) return confirmationError;
       const page = await getPage();
       const { pageInfo, snapshot, workspace, workspaceSummary, workspaceSurface } = await loadWorkspacePageContext(page, state, syncState, collectSnapshot);
       const status = getWorkspaceStatus(state);
@@ -545,6 +551,7 @@ function registerWorkspaceExecuteActionTool(server, state, deps) {
   const syncState = deps.syncPageState ?? syncPageState;
   const collectSnapshot = deps.collectVisibleWorkspaceSnapshot ?? collectVisibleWorkspaceSnapshot;
   const actionExecutor = deps.executeWorkspaceAction ?? executeWorkspaceAction;
+  const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
 
   server.registerTool(
     'execute_action',
@@ -557,6 +564,9 @@ function registerWorkspaceExecuteActionTool(server, state, deps) {
       },
     },
     async ({ action = 'send', mode = 'preview', confirmation } = {}) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'execute_action');
+      if (confirmationError) return confirmationError;
       const page = await getPage();
       const { pageInfo, snapshot, workspace, workspaceSummary, workspaceSurface } = await loadWorkspacePageContext(page, state, syncState, collectSnapshot);
       const executeResult = await actionExecutor({
@@ -678,6 +688,8 @@ export function registerWorkspaceTools(server, state, deps = {}) {
   const getPage = deps.getActivePage ?? getActivePage;
   const syncState = deps.syncPageState ?? syncPageState;
   const collectSnapshot = deps.collectVisibleWorkspaceSnapshot ?? collectVisibleWorkspaceSnapshot;
+  const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
+  const toolDeps = { ...deps, getBrowserInstance };
 
   server.registerTool(
     'workspace_inspect',
@@ -717,6 +729,9 @@ export function registerWorkspaceTools(server, state, deps = {}) {
       },
     },
     async ({ item }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'select_live_item');
+      if (confirmationError) return confirmationError;
       const page = await getPage();
       const { pageInfo, snapshot, workspace, workspaceSummary, workspaceSurface } = await loadWorkspacePageContext(page, state, syncState, collectSnapshot);
       const status = getWorkspaceStatus(state);
@@ -807,7 +822,7 @@ export function registerWorkspaceTools(server, state, deps = {}) {
       });
     }
   );
-  registerWorkspaceDraftActionTool(server, state, deps);
-  registerWorkspaceExecuteActionTool(server, state, deps);
-  registerWorkspaceVerifyOutcomeTool(server, state, deps);
+  registerWorkspaceDraftActionTool(server, state, toolDeps);
+  registerWorkspaceExecuteActionTool(server, state, toolDeps);
+  registerWorkspaceVerifyOutcomeTool(server, state, toolDeps);
 }

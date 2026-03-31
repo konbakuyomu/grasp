@@ -53,6 +53,7 @@ export function createServerState() {
     pageState: createPageGraspState(),
     handoff: createHandoffState(),
     runtimeTruth: null,
+    runtimeConfirmation: null,
     verificationContext: null,
     lastRouteTrace: null,
     taskFrames: new Map(),

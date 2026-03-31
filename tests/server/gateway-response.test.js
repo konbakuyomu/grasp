@@ -17,3 +17,22 @@ test('buildGatewayResponse returns the normalized gateway shape', () => {
   assert.equal(response.meta.result.markdown, '# Example\n\nBody');
   assert.equal(response.meta.continuation.suggested_next_action, 'extract');
 });
+
+test('buildGatewayResponse includes runtime instance metadata when provided', () => {
+  const response = buildGatewayResponse({
+    status: 'direct',
+    page: { title: 'Example', url: 'https://example.com', page_role: 'content', risk_gate: false, grasp_confidence: 'high' },
+    continuation: { can_continue: true, suggested_next_action: 'inspect', handoff_state: 'idle' },
+    runtime: {
+      instance: {
+        browser: 'HeadlessChrome/136.0.7103.114',
+        display: 'headless',
+        warning: 'Current endpoint is a headless browser, not a visible local browser window.',
+      },
+    },
+  });
+
+  assert.match(response.content[0].text, /Instance: headless/);
+  assert.match(response.content[0].text, /Current endpoint is a headless browser, not a visible local browser window\./);
+  assert.equal(response.meta.runtime.instance.display, 'headless');
+});

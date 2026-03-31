@@ -112,6 +112,59 @@ test('inspect returns current gateway page status without raw primitive wording'
   assert.doesNotMatch(result.content[0].text, /page_role|handoff_state|suggested_next_action/);
 });
 
+test('inspect reports runtime instance identity when available', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com',
+    title: () => 'Example',
+  });
+  const state = { pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
+
+  registerGatewayTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+    getBrowserInstance: async () => ({
+      browser: 'HeadlessChrome/136.0.7103.114',
+      display: 'headless',
+      warning: 'Current endpoint is a headless browser, not a visible local browser window.',
+    }),
+  });
+
+  const inspect = calls.find((tool) => tool.name === 'inspect');
+  const result = await inspect.handler();
+
+  assert.match(result.content[0].text, /Instance: headless/);
+  assert.match(result.content[0].text, /Current endpoint is a headless browser, not a visible local browser window\./);
+  assert.equal(result.meta.runtime.instance.browser, 'HeadlessChrome/136.0.7103.114');
+});
+
+test('entry is blocked until the runtime instance is explicitly confirmed', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const state = { pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
+
+  registerGatewayTools(server, state, {
+    enterWithStrategy: async () => {
+      throw new Error('entry should not run before confirmation');
+    },
+    getBrowserInstance: async () => ({
+      browser: 'Chrome/136.0.7103.114',
+      display: 'windowed',
+      warning: null,
+    }),
+  });
+
+  const entry = calls.find((tool) => tool.name === 'entry');
+  const result = await entry.handler({ url: 'https://example.com' });
+
+  assert.match(result.content[0].text, /Runtime instance confirmation required/);
+  assert.equal(result.meta.error_code, 'INSTANCE_CONFIRMATION_REQUIRED');
+});
+
 test('inspect and continue pass state into the active page lookup', async () => {
   const calls = [];
   const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
@@ -182,6 +235,61 @@ test('extract returns summary, main text, and markdown in one payload', async ()
   assert.equal(result.meta.result.summary, 'Example summary');
   assert.equal(result.meta.result.main_text, 'Example summary. More body text.');
   assert.match(result.meta.result.markdown, /^# /);
+});
+
+test('extract_structured returns a structured record plus JSON and Markdown exports', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com/profile',
+    title: () => 'Candidate Profile',
+  });
+  const state = { pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
+
+  registerGatewayTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+    waitUntilStable: async () => ({ stable: true }),
+    extractMainContent: async () => ({
+      title: 'Candidate Profile',
+      text: '职位: 前端工程师\n公司名称: OpenAI\n城市: San Francisco',
+    }),
+    extractStructuredContent: async (_page, fields) => ({
+      requested_fields: fields,
+      record: {
+        职位: '前端工程师',
+        公司名称: 'OpenAI',
+      },
+      missing_fields: ['邮箱'],
+      evidence: [
+        { field: '职位', label: '职位', value: '前端工程师', strategy: 'inline_pair' },
+        { field: '公司名称', label: '公司名称', value: 'OpenAI', strategy: 'inline_pair' },
+      ],
+    }),
+  });
+
+  const extractStructured = calls.find((tool) => tool.name === 'extract_structured');
+  const result = await extractStructured.handler({
+    fields: ['职位', '公司名称', '邮箱'],
+    include_markdown: true,
+  });
+
+  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.result.engine, 'data');
+  assert.equal(result.meta.result.title, 'Candidate Profile');
+  assert.deepEqual(result.meta.result.structured.requested_fields, ['职位', '公司名称', '邮箱']);
+  assert.deepEqual(result.meta.result.structured.record, {
+    职位: '前端工程师',
+    公司名称: 'OpenAI',
+  });
+  assert.deepEqual(result.meta.result.structured.missing_fields, ['邮箱']);
+  assert.equal(typeof result.meta.result.exports.json, 'string');
+  assert.match(result.meta.result.exports.json, /"公司名称": "OpenAI"/);
+  assert.match(result.meta.result.exports.markdown, /^# Candidate Profile/);
+  assert.equal(result.meta.continuation.suggested_next_action, 'inspect');
 });
 
 test('extract uses fast path on BOSS pages and skips heavy read dependencies', async () => {

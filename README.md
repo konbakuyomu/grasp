@@ -2,17 +2,17 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [GitHub](https://github.com/Yuzc-001/grasp) · [Issues](https://github.com/Yuzc-001/grasp/issues)
 
-[![Version](https://img.shields.io/badge/version-v0.6.1-0B1738?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.6.3-0B1738?style=flat-square)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-23C993?style=flat-square)](./LICENSE)
 [![Validated](https://img.shields.io/badge/validated-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-5B6CFF?style=flat-square)](./README.md#quickstart)
-> **Grasp is a route-aware Agent Web Runtime. One URL, one best path.**
+> **Grasp is a route-aware AI Browser Runtime for agents. One URL, one best path.**
 
-Grasp runs locally, keeps a dedicated `chrome-grasp` profile, and gives agents a persistent, recoverable web runtime instead of disposable tabs and one-off scripts. The product promise in `v0.6.1` is simple: given a URL and an intent, Grasp should choose the best path first, keep that decision explainable, and continue on the same runtime path.
+Grasp runs locally, keeps a dedicated `chrome-grasp` profile, and gives agents a persistent, human-visible, recoverable web runtime instead of disposable tabs and one-off scripts. That dedicated profile is Grasp's runtime boundary, not "whatever local browser window the user happens to have open right now." The product promise in `v0.6.3` is simple: given a URL and an intent, Grasp should choose the best path first, keep that decision explainable, require confirmed runtime context before page-changing actions, and continue on the same runtime path.
 
-- Current package release: `v0.6.1`
+- Current package release: `v0.6.3`
 - Start here: [Browser Runtime Landing](./docs/browser-runtime-landing.html)
 - Public docs for the runtime surface: [docs/README.md](./docs/README.md)
-- Release notes: [docs/release-notes-v0.6.1.md](./docs/release-notes-v0.6.1.md)
+- Release notes: [docs/release-notes-v0.6.3.md](./docs/release-notes-v0.6.3.md)
 
 ---
 
@@ -76,6 +76,8 @@ npx grasp
 
 This detects Chrome, launches the dedicated `chrome-grasp` profile, and helps you connect your AI client.
 
+By default this connects Grasp's own CDP runtime. Unless you explicitly point it at a different CDP endpoint, it is not claiming control over an arbitrary browser session the user is currently viewing.
+
 If you already have the CLI installed, `grasp connect` does the same local bootstrap step.
 
 Bootstrap also establishes the remote-debugging/CDP connection Grasp needs. In the normal local path, users do not need to prepare that separately.
@@ -116,7 +118,7 @@ Tell your AI to:
 
 1. call `get_status`
 2. use `entry` on a real page with an intent such as `extract` or `workspace`
-3. call `inspect`, then `extract` or `continue`
+3. call `inspect`, then `extract`, `extract_structured`, or `continue`
 4. call `explain_route` or run `grasp explain`
 
 The first win is not just that Grasp opens a page. It is that the agent can choose a route, explain why, and stay inside the same runtime when the task gets real.
@@ -142,6 +144,54 @@ What you get:
 - current page status
 - readable content
 - a suggested next action
+
+### Structured extraction
+
+Use `extract_structured(fields=[...])` when you want the current page converted into a field-based record while staying on the same runtime path.
+
+What you get:
+
+- field-based `record` output
+- `missing_fields` when the page does not expose a requested value clearly enough
+- field evidence with the matched label and extraction strategy
+- JSON export, plus optional Markdown export
+
+Use `extract_batch(urls=[...], fields=[...])` when you want the same structured extraction contract applied across multiple URLs in sequence on the same runtime.
+
+What you get:
+
+- one structured `record` per visited URL
+- exported `CSV` and `JSON` artifacts, plus optional Markdown bundle
+- per-URL status when a page stays gated or needs handoff instead of pretending the scrape succeeded
+
+### Share layer
+
+Use `share_page(format="markdown" | "screenshot" | "pdf")` when the result needs to be forwarded to someone else without sending them the original inaccessible page link.
+
+What you get:
+
+- a shareable artifact written locally
+- a clean share document generated from the current page projection instead of the raw page chrome
+- the same runtime explanation path, so the artifact can still be traced back to the page and route that produced it
+
+Use `explain_share_card()` when you want the human-facing share layout explained before exporting it. This uses a Pretext-backed text layout estimate when available, so the share layer can reason about title and summary density without touching the current page DOM.
+
+### Fast-path adapters
+
+Site-specific fast reads no longer need to live inside the core router. `v0.6.3` keeps the built-in BOSS path as an adapter and lets you extend the same mechanism locally.
+
+What is supported:
+
+- drop `.js` adapters into `~/.grasp/site-adapters`
+- or point `GRASP_SITE_ADAPTER_DIR` at a different adapter directory
+- use a lightweight `.skill` file as a manifest with `entry:` or `adapter:` pointing at a `.js` adapter
+
+A `.js` adapter only needs two capabilities:
+
+- `matches(url)` or `match(url)`
+- `read(page)`
+
+The `.skill` file is only a local manifest that points at the adapter entry. It is not a separate runtime layer.
 
 ### Live session
 
@@ -233,6 +283,7 @@ The runtime surface is the public default. The lower-level runtime is still avai
 Common advanced primitives:
 
 - navigation and state: `navigate`, `get_status`, `get_page_summary`
+- visible runtime tabs: `list_visible_tabs`, `select_visible_tab`
 - interaction map: `get_hint_map`
 - verified actions: `click`, `type`, `hover`, `press_key`, `scroll`
 - observation: `watch_element`
@@ -263,6 +314,7 @@ Full reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 ## Releases
 
 - [CHANGELOG.md](./CHANGELOG.md)
+- [docs/release-notes-v0.6.3.md](./docs/release-notes-v0.6.3.md)
 - [docs/release-notes-v0.6.0.md](./docs/release-notes-v0.6.0.md)
 - [docs/release-notes-v0.55.0.md](./docs/release-notes-v0.55.0.md)
 

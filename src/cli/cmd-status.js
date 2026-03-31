@@ -3,18 +3,7 @@ import { detectChromePath, startChromeHint } from './detect-chrome.js';
 import { readRuntimeTruth } from '../server/runtime-status.js';
 import { readLatestRouteDecision, readLogs } from '../server/audit.js';
 import { isSafeModeEnabled } from '../server/state.js';
-
-async function pingChrome(cdpUrl) {
-  try {
-    const res = await fetch(`${cdpUrl}/json/version`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
+import { readBrowserInstance } from '../runtime/browser-instance.js';
 
 async function getActiveChromeTab(cdpUrl) {
   try {
@@ -50,6 +39,12 @@ export function formatLatestRouteSummary(route) {
   return `${route.selected_mode} -> ${nextStep} (intent: ${intent})`;
 }
 
+export function formatInstanceLabel(instance) {
+  if (instance?.display === 'headless') return 'headless browser';
+  if (instance?.display === 'windowed') return 'windowed browser';
+  return 'unknown browser mode';
+}
+
 export async function runStatus() {
   const config = await readConfig();
   const cdpUrl = process.env.CHROME_CDP_URL || config.cdpUrl;
@@ -62,8 +57,8 @@ export async function runStatus() {
   console.log('  Grasp Runtime Status');
   console.log(`  ${sep}`);
 
-  const chromeInfo = await pingChrome(cdpUrl);
-  const connected = chromeInfo !== null;
+  const instance = await readBrowserInstance(cdpUrl);
+  const connected = instance !== null;
 
   const statusLabel = formatConnectionLabel(connected, runtimeTruth);
   console.log(`  Runtime    ${statusLabel}`);
@@ -75,7 +70,13 @@ export async function runStatus() {
     const updatedAt = new Date(runtimeTruth.updatedAt).toLocaleString();
     console.log(`             Last seen: ${updatedAt}`);
   }
-  console.log(`  Browser    ${connected ? 'running  ' + chromeInfo.Browser : 'not reachable'}`);
+  console.log(`  Browser    ${connected ? 'running  ' + (instance.browser ?? 'unknown') : 'not reachable'}`);
+  if (connected) {
+    console.log(`  Instance   ${formatInstanceLabel(instance)}`);
+    if (instance.warning) {
+      console.log(`             Warning: ${instance.warning}`);
+    }
+  }
   console.log('  Profile    chrome-grasp');
   console.log(`  Safe mode  ${safeMode ? 'on' : 'off'}${safeModeNote}`);
   const latestRoute = await readLatestRouteDecision();

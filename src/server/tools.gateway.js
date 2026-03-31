@@ -6,13 +6,25 @@ import { assessGatewayContinuation } from './continuity.js';
 import { getActivePage } from '../layer1-bridge/chrome.js';
 import { syncPageState } from './state.js';
 import { enterWithStrategy } from './tools.strategy.js';
-import { readBossFastPath } from './fast-path-router.js';
+import { readFastPath } from './fast-path-router.js';
 import { buildPageProjection } from './page-projection.js';
 import { selectEngine } from './engine-selection.js';
 import { decideRoute, resolveRouteIntent } from './route-policy.js';
 import { auditRouteDecision, readLatestRouteDecision } from './audit.js';
 import { textResponse } from './responses.js';
 import { ROUTE_BLOCKED } from './error-codes.js';
+import { readBrowserInstance } from '../runtime/browser-instance.js';
+import { requireConfirmedRuntimeInstance } from './runtime-confirmation.js';
+import { extractStructuredContent } from './structured-extraction.js';
+import { buildExplainShareCard as defaultBuildExplainShareCard } from './explain-share-card.js';
+import {
+  buildBatchMarkdownBundle,
+  buildShareHtml,
+  buildShareMarkdown,
+  renderShareArtifact as renderShareArtifactFile,
+  serializeCsv,
+  writeArtifactFile,
+} from './share-artifacts.js';
 
 function toGatewayPage({ title, url, pageState }, state, { preferCurrentUrl = false } = {}) {
   const pageUrl = preferCurrentUrl
@@ -122,6 +134,66 @@ function getRouteForState({ url, state, intent = null }) {
   });
 }
 
+async function projectPageContent({
+  page,
+  state,
+  selection,
+  include_markdown = false,
+  deps = {},
+} = {}) {
+  const {
+    syncState,
+    observeContent,
+    readFastPathContent,
+    waitUntilStable,
+    extractMainContent,
+  } = deps;
+
+  if (selection.engine === 'runtime') {
+    await syncState(page, state, { force: true });
+    const fastPath = await readFastPathContent(page);
+    if (fastPath) {
+      return buildPageProjection({
+        ...selection,
+        surface: fastPath.surface,
+        title: fastPath.title,
+        url: fastPath.url,
+        mainText: fastPath.mainText,
+        includeMarkdown: include_markdown,
+      });
+    }
+  } else {
+    await syncState(page, state, { force: true });
+  }
+
+  const observed = await observeContent({
+    page,
+    deps: {
+      waitStable: waitUntilStable,
+      extractContent: extractMainContent,
+    },
+    include_markdown,
+  });
+
+  return buildPageProjection({
+    ...selection,
+    surface: 'content',
+    title: await page.title(),
+    url: page.url(),
+    mainText: observed.main_text,
+    markdown: observed.markdown,
+    includeMarkdown: include_markdown,
+  });
+}
+
+function getBatchStatus(records = []) {
+  if (records.length === 0) return 'direct';
+  const directCount = records.filter((record) => record.status === 'direct').length;
+  if (directCount === records.length) return 'direct';
+  if (directCount > 0) return 'mixed';
+  return 'handoff_required';
+}
+
 export function registerGatewayTools(server, state, deps = {}) {
   const enter = deps.enterWithStrategy ?? enterWithStrategy;
   const getPage = deps.getActivePage ?? getActivePage;
@@ -129,6 +201,12 @@ export function registerGatewayTools(server, state, deps = {}) {
   const observeContent = deps.extractObservedContent ?? extractObservedContent;
   const auditRoute = deps.auditRouteDecision ?? auditRouteDecision;
   const readLatestRoute = deps.readLatestRouteDecision ?? readLatestRouteDecision;
+  const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
+  const extractStructured = deps.extractStructuredContent ?? extractStructuredContent;
+  const readFastPathContent = deps.readFastPath ?? readFastPath;
+  const writeArtifact = deps.writeArtifact ?? writeArtifactFile;
+  const renderShareArtifact = deps.renderShareArtifact ?? renderShareArtifactFile;
+  const buildExplainShareCard = deps.buildExplainShareCard ?? defaultBuildExplainShareCard;
 
   server.registerTool(
     'entry',
@@ -140,6 +218,9 @@ export function registerGatewayTools(server, state, deps = {}) {
       },
     },
     async ({ url, intent = 'extract' }) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'entry');
+      if (confirmationError) return confirmationError;
       const outcome = await enter({ url, state, deps: { auditName: 'entry' } });
       const gatewayOutcome = buildGatewayOutcome(outcome);
       const preferCurrentUrl = outcome.preflight?.recommended_entry_strategy === 'handoff_or_preheat';
@@ -172,6 +253,7 @@ export function registerGatewayTools(server, state, deps = {}) {
           handoff_state: outcome.handoff?.state ?? state.handoff?.state ?? 'idle',
         },
         evidence: { strategy: outcome.preflight ?? null },
+        runtime: instance ? { instance } : {},
         route: routeTrace,
         ...(routeTrace.error_code ? { error_code: routeTrace.error_code } : {}),
       });
@@ -187,6 +269,7 @@ export function registerGatewayTools(server, state, deps = {}) {
     async () => {
       const page = await getPage({ state });
       await syncState(page, state, { force: true });
+      const instance = await getBrowserInstance();
       const route = getRouteForState({ url: page.url(), state });
 
       return buildGatewayResponse({
@@ -197,6 +280,7 @@ export function registerGatewayTools(server, state, deps = {}) {
           pageState: state.pageState,
         }, state),
         continuation: getGatewayContinuation(state, 'extract'),
+        runtime: instance ? { instance } : {},
         route,
       });
     }
@@ -212,58 +296,348 @@ export function registerGatewayTools(server, state, deps = {}) {
     },
     async ({ include_markdown = false } = {}) => {
       const page = await getPage({ state });
+      const instance = await getBrowserInstance();
       const selection = selectEngine({ tool: 'extract', url: page.url() });
       const route = getRouteForState({ url: page.url(), state, intent: 'extract' });
-      let projectedFastPath = null;
-
-      if (selection.engine === 'runtime') {
-        await syncState(page, state, { force: true });
-        const fastPath = await readBossFastPath(page);
-        if (fastPath) {
-          projectedFastPath = buildPageProjection({
-            ...selection,
-            surface: fastPath.surface,
-            title: fastPath.title,
-            url: fastPath.url,
-            mainText: fastPath.mainText,
-            includeMarkdown: include_markdown,
-          });
-        }
-      }
-
-      const result = projectedFastPath ?? await (async () => {
-        if (selection.engine !== 'runtime') {
-          await syncState(page, state, { force: true });
-        }
-        const observed = await observeContent({
-          page,
-          deps: {
-            waitStable: deps.waitUntilStable,
-            extractContent: deps.extractMainContent,
-          },
-          include_markdown,
-        });
-        return buildPageProjection({
-          ...selection,
-          surface: 'content',
-          title: await page.title(),
-          url: page.url(),
-          mainText: observed.main_text,
-          markdown: observed.markdown,
-          includeMarkdown: include_markdown,
-        });
-      })();
+      const result = await projectPageContent({
+        page,
+        state,
+        selection,
+        include_markdown,
+        deps: {
+          syncState,
+          observeContent,
+          readFastPathContent,
+          waitUntilStable: deps.waitUntilStable,
+          extractMainContent: deps.extractMainContent,
+        },
+      });
 
       return buildGatewayResponse({
         status: getGatewayStatus(state),
         page: toGatewayPage({
-          title: projectedFastPath?.title ?? await page.title(),
-          url: projectedFastPath?.url ?? page.url(),
+          title: result.title ?? await page.title(),
+          url: result.url ?? page.url(),
           pageState: state.pageState,
         }, state),
-        result: projectedFastPath ?? result,
+        result,
         continuation: getGatewayContinuation(state, 'inspect'),
+        runtime: instance ? { instance } : {},
         route,
+      });
+    }
+  );
+
+  server.registerTool(
+    'extract_structured',
+    {
+      description: 'Extract the current page into a structured record for the requested fields and return JSON/Markdown exports.',
+      inputSchema: {
+        fields: z.array(z.string()).min(1).describe('Field labels to extract from the current page into a structured record'),
+        include_markdown: z.boolean().optional().describe('Include a Markdown export alongside the JSON export'),
+      },
+    },
+    async ({ fields, include_markdown = false } = {}) => {
+      const page = await getPage({ state });
+      const instance = await getBrowserInstance();
+      const route = getRouteForState({ url: page.url(), state, intent: 'extract' });
+      const selection = selectEngine({ tool: 'extract_structured', url: page.url() });
+      const projection = await projectPageContent({
+        page,
+        state,
+        selection,
+        include_markdown,
+        deps: {
+          syncState,
+          observeContent,
+          readFastPathContent,
+          waitUntilStable: deps.waitUntilStable,
+          extractMainContent: deps.extractMainContent,
+        },
+      });
+      const structured = await extractStructured(page, fields);
+      const exports = {
+        json: JSON.stringify({
+          title: projection.title,
+          url: projection.url,
+          record: structured.record,
+          missing_fields: structured.missing_fields,
+        }, null, 2),
+        ...(projection.markdown !== undefined ? { markdown: projection.markdown } : {}),
+      };
+
+      return buildGatewayResponse({
+        status: getGatewayStatus(state),
+        page: toGatewayPage({
+          title: projection.title,
+          url: projection.url,
+          pageState: state.pageState,
+        }, state),
+        result: {
+          ...projection,
+          structured,
+          exports,
+        },
+        continuation: getGatewayContinuation(state, 'inspect'),
+        runtime: instance ? { instance } : {},
+        route,
+      });
+    }
+  );
+
+  server.registerTool(
+    'extract_batch',
+    {
+      description: 'Visit a list of URLs through the runtime loop, extract structured records, and export CSV/JSON/Markdown artifacts.',
+      inputSchema: {
+        urls: z.array(z.string().url()).min(1).describe('URLs to visit sequentially through the same runtime'),
+        fields: z.array(z.string()).min(1).describe('Field labels to extract into structured records and CSV columns'),
+        include_markdown: z.boolean().optional().describe('Also write a Markdown bundle alongside the CSV and JSON exports'),
+      },
+    },
+    async ({ urls, fields, include_markdown = false } = {}) => {
+      const instance = await getBrowserInstance();
+      const confirmationError = requireConfirmedRuntimeInstance(state, instance, 'extract_batch');
+      if (confirmationError) return confirmationError;
+
+      const records = [];
+
+      for (const inputUrl of urls) {
+        const outcome = await enter({ url: inputUrl, state, deps: { auditName: 'extract_batch' } });
+        let page = null;
+        try {
+          page = await getPage({ state });
+        } catch {
+          page = null;
+        }
+
+        const status = getGatewayStatus(state);
+        if (!page || status !== 'direct') {
+          records.push({
+            input_url: inputUrl,
+            final_url: outcome.final_url ?? outcome.url ?? inputUrl,
+            status,
+            title: outcome.title ?? 'unknown',
+            record: {},
+            missing_fields: [...fields],
+            route: outcome.preflight?.recommended_entry_strategy ?? 'unknown',
+          });
+          continue;
+        }
+
+        const selection = selectEngine({ tool: 'extract_structured', url: page.url() });
+        const projection = await projectPageContent({
+          page,
+          state,
+          selection,
+          include_markdown,
+          deps: {
+            syncState,
+            observeContent,
+            readFastPathContent,
+            waitUntilStable: deps.waitUntilStable,
+            extractMainContent: deps.extractMainContent,
+          },
+        });
+        const structured = await extractStructured(page, fields);
+
+        records.push({
+          input_url: inputUrl,
+          final_url: projection.url,
+          status,
+          title: projection.title,
+          record: structured.record,
+          missing_fields: structured.missing_fields,
+          evidence: structured.evidence,
+        });
+      }
+
+      const columns = ['input_url', 'final_url', 'status', 'title', ...fields];
+      const csvRows = records.map((record) => ({
+        input_url: record.input_url,
+        final_url: record.final_url,
+        status: record.status,
+        title: record.title,
+        ...Object.fromEntries(fields.map((field) => [field, record.record?.[field] ?? ''])),
+      }));
+      const csv = serializeCsv(columns, csvRows);
+      const json = JSON.stringify({
+        fields,
+        records,
+      }, null, 2);
+      const artifacts = {
+        csv: await writeArtifact({
+          filename: 'batch-extract.csv',
+          data: csv,
+          encoding: 'utf8',
+          mimeType: 'text/csv',
+        }),
+        json: await writeArtifact({
+          filename: 'batch-extract.json',
+          data: json,
+          encoding: 'utf8',
+          mimeType: 'application/json',
+        }),
+      };
+
+      if (include_markdown) {
+        artifacts.markdown = await writeArtifact({
+          filename: 'batch-extract.md',
+          data: buildBatchMarkdownBundle({ fields, records }),
+          encoding: 'utf8',
+          mimeType: 'text/markdown',
+        });
+      }
+
+      const page = await getPage({ state });
+      const batchStatus = getBatchStatus(records);
+      const route = getRouteForState({ url: page.url(), state, intent: 'extract' });
+
+      return buildGatewayResponse({
+        status: batchStatus,
+        page: toGatewayPage({
+          title: await page.title(),
+          url: page.url(),
+          pageState: state.pageState,
+        }, state),
+        result: {
+          fields,
+          records,
+          artifacts,
+        },
+        continuation: getGatewayContinuation(state, 'inspect'),
+        runtime: instance ? { instance } : {},
+        route,
+        message: [
+          `Status: ${batchStatus}`,
+          `Visited URLs: ${urls.length}`,
+          `Structured records: ${records.length}`,
+          `CSV artifact: ${artifacts.csv.path}`,
+          `JSON artifact: ${artifacts.json.path}`,
+          ...(artifacts.markdown ? [`Markdown artifact: ${artifacts.markdown.path}`] : []),
+          `Next: inspect`,
+        ],
+      });
+    }
+  );
+
+  server.registerTool(
+    'share_page',
+    {
+      description: 'Export the current page into a shareable Markdown, screenshot, or PDF artifact.',
+      inputSchema: {
+        format: z.enum(['markdown', 'screenshot', 'pdf']).describe('Share artifact format to generate from the current page'),
+      },
+    },
+    async ({ format }) => {
+      const page = await getPage({ state });
+      const instance = await getBrowserInstance();
+      const selection = selectEngine({ tool: 'extract', url: page.url() });
+      const route = getRouteForState({ url: page.url(), state, intent: 'extract' });
+      const projection = await projectPageContent({
+        page,
+        state,
+        selection,
+        include_markdown: true,
+        deps: {
+          syncState,
+          observeContent,
+          readFastPathContent,
+          waitUntilStable: deps.waitUntilStable,
+          extractMainContent: deps.extractMainContent,
+        },
+      });
+      const explainCard = await buildExplainShareCard(page, projection);
+      let artifactMeta = null;
+
+      if (format === 'markdown') {
+        artifactMeta = await writeArtifact({
+          filename: 'share-page.md',
+          data: buildShareMarkdown({ projection, explainCard }),
+          encoding: 'utf8',
+          mimeType: 'text/markdown',
+        });
+      } else {
+        const rendered = await renderShareArtifact(page, buildShareHtml({ projection, explainCard }), format);
+        artifactMeta = await writeArtifact({
+          filename: `share-page.${rendered.extension}`,
+          data: rendered.data,
+          mimeType: rendered.mimeType,
+        });
+      }
+
+      return buildGatewayResponse({
+        status: getGatewayStatus(state),
+        page: toGatewayPage({
+          title: projection.title,
+          url: projection.url,
+          pageState: state.pageState,
+        }, state),
+        result: {
+          projection,
+          explain_card: explainCard,
+          artifact: {
+            format,
+            ...artifactMeta,
+          },
+        },
+        continuation: getGatewayContinuation(state, 'inspect'),
+        runtime: instance ? { instance } : {},
+        route,
+      });
+    }
+  );
+
+  server.registerTool(
+    'explain_share_card',
+    {
+      description: 'Explain how Grasp would lay out the current page as a share card, using Pretext when available.',
+      inputSchema: {
+        width: z.number().int().positive().optional().describe('Target card width in pixels'),
+      },
+    },
+    async ({ width = 640 } = {}) => {
+      const page = await getPage({ state });
+      const instance = await getBrowserInstance();
+      const selection = selectEngine({ tool: 'extract', url: page.url() });
+      const route = getRouteForState({ url: page.url(), state, intent: 'extract' });
+      const projection = await projectPageContent({
+        page,
+        state,
+        selection,
+        include_markdown: true,
+        deps: {
+          syncState,
+          observeContent,
+          readFastPathContent,
+          waitUntilStable: deps.waitUntilStable,
+          extractMainContent: deps.extractMainContent,
+        },
+      });
+      const explainCard = await buildExplainShareCard(page, projection, { width });
+
+      return buildGatewayResponse({
+        status: getGatewayStatus(state),
+        page: toGatewayPage({
+          title: projection.title,
+          url: projection.url,
+          pageState: state.pageState,
+        }, state),
+        result: {
+          projection,
+          explain_card: explainCard,
+        },
+        continuation: getGatewayContinuation(state, 'share_page'),
+        runtime: instance ? { instance } : {},
+        route,
+        message: [
+          `Status: ${getGatewayStatus(state)}`,
+          `Page: ${projection.title}`,
+          `URL: ${projection.url}`,
+          `Explain card engine: ${explainCard.engine}`,
+          `Estimated height: ${explainCard.estimated_height}px`,
+          `Next: share_page`,
+        ],
       });
     }
   );
@@ -277,6 +651,7 @@ export function registerGatewayTools(server, state, deps = {}) {
     async () => {
       const page = await getPage({ state });
       await syncState(page, state, { force: true });
+      const instance = await getBrowserInstance();
       const outcome = await assessGatewayContinuation(page, state);
       const route = getRouteForState({ url: page.url(), state });
 
@@ -288,6 +663,7 @@ export function registerGatewayTools(server, state, deps = {}) {
           pageState: state.pageState,
         }, state),
         continuation: outcome.continuation,
+        runtime: instance ? { instance } : {},
         route,
       });
     }

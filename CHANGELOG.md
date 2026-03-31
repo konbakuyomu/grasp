@@ -4,6 +4,31 @@ All notable changes to Grasp are documented here.
 
 ---
 
+## v0.6.3 — 2026-03-31
+
+The release that makes Grasp legible as a visible AI browser runtime and ships the first structured extraction path on top of the same runtime.
+
+### Added
+- **Structured Extraction Tool**: Added `extract_structured(fields=[...])` to the gateway surface so agents can turn the current page into a field-based record with JSON and optional Markdown exports.
+- **Structured Matching Layer**: Added deterministic field matching for common label/value page patterns such as definition lists, table rows, and inline `Label: Value` text pairs.
+- **Batch Scraper Surface**: Added `extract_batch(urls=[...], fields=[...])` so the same structured extraction contract can run across multiple URLs and emit CSV / JSON / optional Markdown artifacts.
+- **Share Layer**: Added `share_page(format)` and `explain_share_card()` so current-page results can be exported as Markdown, screenshot, or PDF artifacts with a human-facing explanation layer.
+
+### Changed
+- **Visible Runtime Boundary**: Page-changing actions now require a confirmed runtime instance when the active browser instance can be identified, making the visible browser boundary a first-class runtime rule instead of a convention.
+- **Plugin-based Fast-path Adapters**: The built-in BOSS fast path now runs through an adapter router, and local `.js` adapters or lightweight `.skill` manifests can extend site-specific fast reads from `~/.grasp/site-adapters` without changing core code.
+- **Visible Browser Standard Flow**: Runtime tabs can now be enumerated and selected explicitly through `list_visible_tabs` and `select_visible_tab`, instead of relying on implicit tab guesses.
+- **Pretext-backed Explain Layer**: Share-card layout explanation now uses Pretext when available so title / summary density can be estimated without touching the current page DOM.
+- **Product Positioning**: README, docs index, landing page, MCP tool reference, and CLI help now describe Grasp as a route-aware AI browser runtime with a visible runtime boundary.
+- **Release Surface**: Public docs now introduce structured extraction as the first flagship AI Scraper path built on top of the same runtime loop.
+
+### Validated
+- New structured extraction coverage passes for gateway integration and field matching.
+- Previously-added runtime confirmation coverage remains green across action, gateway, form, and workspace flows.
+- Full automated test suite passes before release.
+
+---
+
 ## v0.6.1 — 2026-03-29
 
 The release that solidifies the "Parallelism Foundations" by integrating task-aware auditing and explicit task management into the core runtime.

@@ -85,6 +85,43 @@ test('fill_form returns written skipped unresolved refreshed form and write evid
   assert.equal(result.meta.result.write_evidence[0].write_side_effect, 'draft_mutation_possible');
 });
 
+test('fill_form is blocked until the runtime instance is explicitly confirmed', async () => {
+  const { registerFormTools } = await import('../../src/server/tools.form.js');
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const state = { pageState: { currentRole: 'form', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
+
+  registerFormTools(server, state, {
+    getActivePage: async () => createFakePage({
+      url: () => 'https://example.com/form',
+      title: () => '简历编辑',
+    }),
+    syncPageState: async () => undefined,
+    getBrowserInstance: async () => ({
+      browser: 'Chrome/136.0.7103.114',
+      display: 'windowed',
+      warning: null,
+    }),
+    collectVisibleFormSnapshot: async () => ({
+      sections: [],
+      fields: [],
+      submit_controls: [],
+      ambiguous_labels: [],
+      completion_status: 'ready',
+      summary: { total: 0, safe: 0, review: 0, sensitive: 0, labels: [] },
+    }),
+    fillSafeFields: async () => {
+      throw new Error('fillSafeFields should not run before confirmation');
+    },
+  });
+
+  const fillForm = calls.find((tool) => tool.name === 'fill_form');
+  const result = await fillForm.handler({ values: { 姓名: '张三' } });
+
+  assert.match(result.content[0].text, /Runtime instance confirmation required/);
+  assert.equal(result.meta.error_code, 'INSTANCE_CONFIRMATION_REQUIRED');
+});
+
 test('set_option blocks sensitive fields and returns unresolved for ambiguous labels', async () => {
   const { registerFormTools } = await import('../../src/server/tools.form.js');
   const calls = [];
