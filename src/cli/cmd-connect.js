@@ -114,7 +114,7 @@ export async function runConnect() {
     console.log(`  ${STEP_FAIL} No AI clients found`);
     console.log('');
     console.log('  Add Grasp manually to your AI client config:');
-    console.log('    { "mcpServers": { "grasp": { "command": "npx", "args": ["-y", "grasp"] } } }');
+      console.log('    { "mcpServers": { "grasp": { "command": "npx", "args": ["-y", "@yuzc-001/grasp"] } } }');
   } else {
     const results = await autoConfigureAll(clients);
     for (const { label, result } of results) {

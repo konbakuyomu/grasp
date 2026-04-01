@@ -606,13 +606,13 @@
           <div class="step-index">1</div>
           <h3>Bootstrap</h3>
           <p>Run the local runtime and keep using the dedicated `chrome-grasp` profile.</p>
-          <pre>npx grasp</pre>
+<pre>npx -y @yuzc-001/grasp</pre>
         </article>
         <article class="step">
           <div class="step-index">2</div>
           <h3>Connect</h3>
           <p>Add Grasp to your AI client so the agent can use the same runtime surface.</p>
-          <pre>claude mcp add grasp -- npx -y grasp</pre>
+<pre>claude mcp add grasp -- npx -y @yuzc-001/grasp</pre>
         </article>
         <article class="step">
           <div class="step-index">3</div>
@@ -631,7 +631,7 @@ explain_route()</pre>
       <div>
         <span class="eyebrow">Delivery Surfaces</span>
         <p>
-          `npx grasp` / `grasp connect` bootstrap the runtime locally. MCP tools expose the public runtime surface.
+`npx -y @yuzc-001/grasp` / `grasp connect` bootstrap the runtime locally. MCP tools expose the public runtime surface.
           The skill is the recommended task-facing layer on top of the same interface.
         </p>
       </div>

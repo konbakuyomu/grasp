@@ -2,7 +2,7 @@
   "mcpServers": {
     "grasp": {
       "command": "npx",
-      "args": ["-y", "grasp"]
+      "args": ["-y", "@yuzc-001/grasp"]
     }
   }
 }

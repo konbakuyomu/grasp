@@ -8,7 +8,7 @@ test('npm publish workflow releases from version tags with npm auth and version 
   const workflow = readFileSync(workflowPath, 'utf8');
 
   assert.match(workflow, /push:\s*\n\s+tags:\s*\n\s+-\s*['"]v\*['"]/);
-  assert.match(workflow, /npm publish/);
+  assert.match(workflow, /npm publish --access public/);
   assert.match(workflow, /NPM_TOKEN/);
   assert.match(workflow, /github\.ref_name/);
   assert.match(workflow, /package\.json/);

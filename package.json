@@ -1,5 +1,5 @@
 {
-  "name": "grasp",
+  "name": "@yuzc-001/grasp",
   "version": "0.6.4",
   "description": "Visible AI browser runtime with persistent sessions, verified actions, structured extraction, and recoverable handoff.",
   "main": "index.js",

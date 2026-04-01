@@ -11,7 +11,7 @@ import { homedir, platform } from 'os';
 import { existsSync } from 'fs';
 import { execSync } from 'child_process';
 
-const GRASP_MCP_JSON = { command: 'npx', args: ['-y', 'grasp'] };
+const GRASP_MCP_JSON = { command: 'npx', args: ['-y', '@yuzc-001/grasp'] };
 const env = process.env;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ async function writeCodexToml(filePath) {
   let content = '';
   try { content = await readFile(filePath, 'utf8'); } catch { /* new file */ }
   if (content.includes('[mcp_servers.grasp]')) return 'already-configured';
-  const entry = '\n[mcp_servers.grasp]\ntype    = "stdio"\ncommand = "npx"\nargs    = ["-y", "grasp"]\n';
+  const entry = '\n[mcp_servers.grasp]\ntype    = "stdio"\ncommand = "npx"\nargs    = ["-y", "@yuzc-001/grasp"]\n';
   await writeFile(filePath, content + entry, 'utf8');
   return 'written';
 }
@@ -64,7 +64,7 @@ const CLIENTS = [
         if (out.includes('grasp:')) return 'already-configured';
       } catch { /* no entries yet */ }
       try {
-        execSync('claude mcp add grasp -- npx -y grasp', { stdio: 'ignore' });
+    execSync('claude mcp add grasp -- npx -y @yuzc-001/grasp', { stdio: 'ignore' });
         return 'written';
       } catch { return 'failed'; }
     },

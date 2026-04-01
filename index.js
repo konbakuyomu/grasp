@@ -69,7 +69,7 @@ export function renderHelpText() {
     grasp --help           Print this help
 
   First runtime steps:
-    1. npx grasp           Bootstrap the runtime and connect your AI client
+ 1. npx -y @yuzc-001/grasp  Bootstrap the runtime and connect your AI client
     2. Open any real page  Keep using the dedicated chrome-grasp profile
                            This runtime profile is separate from arbitrary browser windows you may already have open
     3. Ask your AI         Call get_status / entry(url, intent) / inspect / extract or continue / explain_route

@@ -69,7 +69,7 @@ continue()
 ### 1. 本地启动 Grasp
 
 ```bash
-npx grasp
+npx -y @yuzc-001/grasp
 ```
 
 它会检测 Chrome，启动专属 `chrome-grasp` 浏览器配置目录，并帮助你把运行时接到 AI 客户端上。
@@ -85,7 +85,7 @@ Bootstrap 也会建立 Grasp 需要的 remote debugging / CDP 连接；在正常
 Claude Code：
 
 ```bash
-claude mcp add grasp -- npx -y grasp
+claude mcp add grasp -- npx -y @yuzc-001/grasp
 ```
 
 Claude Desktop / Cursor：
@@ -95,7 +95,7 @@ Claude Desktop / Cursor：
   "mcpServers": {
     "grasp": {
       "command": "npx",
-      "args": ["-y", "grasp"]
+      "args": ["-y", "@yuzc-001/grasp"]
     }
   }
 }
@@ -107,7 +107,7 @@ Codex CLI：
 [mcp_servers.grasp]
 type = "stdio"
 command = "npx"
-args = ["-y", "grasp"]
+args = ["-y", "@yuzc-001/grasp"]
 ```
 
 ### 3. 拿到第一次真实成功
@@ -220,7 +220,7 @@ args = ["-y", "grasp"]
 
 ### 三层关系
 
-产品本身是 route-aware Agent Web Runtime。`npx grasp` / `grasp connect` 负责在本地把它启动起来，MCP 工具是它的公共运行时接口，skill 是建立在同一运行时之上的推荐任务层。
+产品本身是 route-aware Agent Web Runtime。`npx -y @yuzc-001/grasp` / `grasp connect` 负责在本地把它启动起来，MCP 工具是它的公共运行时接口，skill 是建立在同一运行时之上的推荐任务层。
 
 CLI、MCP、skill 都只是同一运行时的交付面，不是彼此独立的产品定义。
 

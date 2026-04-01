@@ -71,7 +71,7 @@ What it does not claim:
 ### 1. Bootstrap Grasp locally
 
 ```bash
-npx grasp
+npx -y @yuzc-001/grasp
 ```
 
 This detects Chrome, launches the dedicated `chrome-grasp` profile, and helps you connect your AI client.
@@ -87,7 +87,7 @@ Bootstrap also establishes the remote-debugging/CDP connection Grasp needs. In t
 Claude Code:
 
 ```bash
-claude mcp add grasp -- npx -y grasp
+claude mcp add grasp -- npx -y @yuzc-001/grasp
 ```
 
 Claude Desktop / Cursor:
@@ -97,7 +97,7 @@ Claude Desktop / Cursor:
   "mcpServers": {
     "grasp": {
       "command": "npx",
-      "args": ["-y", "grasp"]
+      "args": ["-y", "@yuzc-001/grasp"]
     }
   }
 }
@@ -109,7 +109,7 @@ Codex CLI:
 [mcp_servers.grasp]
 type = "stdio"
 command = "npx"
-args = ["-y", "grasp"]
+args = ["-y", "@yuzc-001/grasp"]
 ```
 
 ### 3. Get your first win
@@ -222,7 +222,7 @@ Runtime story: [docs/product/browser-runtime-for-agents.md](./docs/product/brows
 
 ### How the layers fit
 
-The product is the route-aware Agent Web Runtime itself. `npx grasp` / `grasp connect` bootstrap it locally, MCP tools expose the public runtime surface, and the skill is the recommended task-facing layer on top of the same runtime.
+The product is the route-aware Agent Web Runtime itself. `npx -y @yuzc-001/grasp` / `grasp connect` bootstrap it locally, MCP tools expose the public runtime surface, and the skill is the recommended task-facing layer on top of the same runtime.
 
 For the canonical delivery-surface mapping, see [Browser Runtime for Agents](./docs/product/browser-runtime-for-agents.md).
 

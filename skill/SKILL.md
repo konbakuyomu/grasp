@@ -22,7 +22,7 @@ description: Use when an agent needs the visible local Grasp browser runtime for
 - Prefer `list_visible_tabs` / `select_visible_tab` before raw tab primitives such as `get_tabs` or `switch_tab`.
 - Refresh `get_hint_map` after navigation, a page-changing click, a visible DOM change, or scroll-loaded content. Old hint IDs are not safe to reuse after the page changes.
 - Use the handoff flow when the task is blocked by login, CAPTCHA, checkpoints, or other human-only steps.
-- If local CDP is unreachable, Grasp may auto-launch local Chrome or Edge now. If that still does not recover the runtime, ask the user to run `npx grasp`, `grasp connect`, or `start-chrome.bat` on Windows.
+- If local CDP is unreachable, Grasp may auto-launch local Chrome or Edge now. If that still does not recover the runtime, ask the user to run `npx -y @yuzc-001/grasp`, `grasp connect`, or `start-chrome.bat` on Windows.
 
 ## Recommended workflow
 

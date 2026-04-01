@@ -53,11 +53,11 @@ This is the current product direction: one interface, with `Runtime Engine` firs
 
 ## Delivery surfaces, not product identity
 
-- Bootstrap: `npx grasp` or `grasp connect`
+- Bootstrap: `npx -y @yuzc-001/grasp` or `grasp connect`
 - Public runtime surface: MCP tools such as `entry`, `inspect`, `extract`, `continue`, and `explain_route`
 - Recommended task layer: [Grasp skill](../../skill/SKILL.md)
 
-`npx grasp` / `grasp connect` only bootstrap the local runtime. MCP tools are the public runtime surface. The skill is the recommended task-facing layer on top of the same interface. CLI, MCP, and the skill are delivery surfaces for the browser runtime, not separate product identities.
+`npx -y @yuzc-001/grasp` / `grasp connect` only bootstrap the local runtime. MCP tools are the public runtime surface. The skill is the recommended task-facing layer on top of the same interface. CLI, MCP, and the skill are delivery surfaces for the browser runtime, not separate product identities.
 
 Bootstrap also establishes the local Chrome/CDP connection Grasp needs. That is a bootstrap concern, not a separate product layer users normally manage by hand.
 
@@ -90,7 +90,7 @@ BOSS is one example on top of the browser runtime. It proves the runtime on a co
 ## What Grasp is not saying
 
 - it is not just a browser gateway
-- it is not just `npx grasp`
+- it is not just `npx -y @yuzc-001/grasp`
 - it is not limited to BOSS
 - it is not a scraping-only product
 - it is not a provider chooser the user has to reason about manually

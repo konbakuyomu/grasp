@@ -19,7 +19,7 @@ If `get_status` or another tool reports that CDP is unreachable:
 
 - Grasp may now auto-launch local Chrome or Edge when the endpoint is local
 - If the runtime still does not recover, ask the user to run:
-  - `npx grasp`
+- `npx -y @yuzc-001/grasp`
   - `grasp connect`
   - `start-chrome.bat` on Windows
 
@@ -291,7 +291,7 @@ If you are not sure, prefer the route-aware runtime surface plus the current for
 
 | Problem | What to do |
 |---|---|
-| `connected: false` or `CDP_UNREACHABLE` | Retry `get_status`; Grasp may auto-launch local Chrome or Edge; if not, ask the user to run `npx grasp`, `grasp connect`, or `start-chrome.bat` |
+| `connected: false` or `CDP_UNREACHABLE` | Retry `get_status`; Grasp may auto-launch local Chrome or Edge; if not, ask the user to run `npx -y @yuzc-001/grasp`, `grasp connect`, or `start-chrome.bat` |
 | `INSTANCE_CONFIRMATION_REQUIRED` | Call `get_status`, then `confirm_runtime_instance(display="windowed")` or confirm the actual expected mode |
 | `INSTANCE_CONFIRMATION_MISMATCH` | Stop and switch to the correct runtime instance before acting |
 | `TAB_AMBIGUOUS` or `TAB_NOT_FOUND` | Use `list_visible_tabs` and refine `select_visible_tab(query=..., title_contains=..., url_contains=...)` |

@@ -15,7 +15,7 @@ args    = -y grasp
 Set up the runtime first with:
 
 ```bash
-npx grasp
+npx -y @yuzc-001/grasp
 ```
 
 ## Hero Demo Intent Mapping
