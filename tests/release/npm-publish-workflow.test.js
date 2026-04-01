@@ -4,10 +4,11 @@ import { readFileSync } from 'node:fs';
 
 const workflowPath = new URL('../../.github/workflows/npm-publish.yml', import.meta.url);
 
-test('npm publish workflow releases from version tags with npm auth and version checks', () => {
+test('npm publish workflow is manual-only and keeps npm auth/version checks', () => {
   const workflow = readFileSync(workflowPath, 'utf8');
 
-  assert.match(workflow, /push:\s*\n\s+tags:\s*\n\s+-\s*['"]v\*['"]/);
+  assert.doesNotMatch(workflow, /push:\s*\n\s+tags:\s*\n\s+-\s*['"]v\*['"]/);
+  assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /npm publish --access public/);
   assert.match(workflow, /actions\/checkout@v5/);
   assert.match(workflow, /actions\/setup-node@v6/);
