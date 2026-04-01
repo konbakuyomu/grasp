@@ -2,7 +2,7 @@
 
 Public docs for the Grasp route-aware Agent Web Runtime.
 
-Current package release: `v0.6.3`
+Current package release: `v0.6.4`
 
 ---
 
@@ -60,6 +60,7 @@ For the canonical product-layer mapping, see [Browser Runtime for Agents](./prod
 
 ## Releases
 
+- [CHANGELOG](../CHANGELOG.md)
 - [v0.6.3 release notes](./release-notes-v0.6.3.md)
 - [v0.6.1 release notes](./release-notes-v0.6.1.md)
 - [v0.6.0 release notes](./release-notes-v0.6.0.md)

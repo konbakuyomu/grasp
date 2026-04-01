@@ -2,17 +2,17 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [GitHub](https://github.com/Yuzc-001/grasp) · [Issues](https://github.com/Yuzc-001/grasp/issues)
 
-[![Version](https://img.shields.io/badge/version-v0.6.3-0B1738?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.6.4-0B1738?style=flat-square)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-23C993?style=flat-square)](./LICENSE)
 [![Validated](https://img.shields.io/badge/validated-Claude%20Code%20%7C%20Codex%20%7C%20Cursor-5B6CFF?style=flat-square)](./README.md#quickstart)
 > **Grasp is a route-aware AI Browser Runtime for agents. One URL, one best path.**
 
-Grasp runs locally, keeps a dedicated `chrome-grasp` profile, and gives agents a persistent, human-visible, recoverable web runtime instead of disposable tabs and one-off scripts. That dedicated profile is Grasp's runtime boundary, not "whatever local browser window the user happens to have open right now." The product promise in `v0.6.3` is simple: given a URL and an intent, Grasp should choose the best path first, keep that decision explainable, require confirmed runtime context before page-changing actions, and continue on the same runtime path.
+Grasp runs locally, keeps a dedicated `chrome-grasp` profile, and gives agents a persistent, human-visible, recoverable web runtime instead of disposable tabs and one-off scripts. That dedicated profile is Grasp's runtime boundary, not "whatever local browser window the user happens to have open right now." The product promise in `v0.6.4` is simple: given a URL and an intent, Grasp should choose the best path first, keep that decision explainable, require confirmed runtime context before page-changing actions, and continue on the same runtime path.
 
-- Current package release: `v0.6.3`
+- Current package release: `v0.6.4`
 - Start here: [Browser Runtime Landing](./docs/browser-runtime-landing.html)
 - Public docs for the runtime surface: [docs/README.md](./docs/README.md)
-- Release notes: [docs/release-notes-v0.6.3.md](./docs/release-notes-v0.6.3.md)
+- Release notes: [CHANGELOG.md](./CHANGELOG.md)
 
 ---
 
@@ -314,7 +314,7 @@ Full reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 ## Releases
 
 - [CHANGELOG.md](./CHANGELOG.md)
-- [docs/release-notes-v0.6.3.md](./docs/release-notes-v0.6.3.md)
+- [CHANGELOG.md](./CHANGELOG.md)
 - [docs/release-notes-v0.6.0.md](./docs/release-notes-v0.6.0.md)
 - [docs/release-notes-v0.55.0.md](./docs/release-notes-v0.55.0.md)
 
@@ -324,4 +324,4 @@ MIT — see [LICENSE](./LICENSE).
 
 ## Star History
 
-[![Star History Chart](./star-history.svg)](https://star-history.com/#Yuzc-001/grasp&Date)
+[![Star History Chart](https://api.star-history.com/image?repos=Yuzc-001/grasp&type=Date)](https://star-history.com/#Yuzc-001/grasp&Date)
