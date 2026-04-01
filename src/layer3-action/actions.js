@@ -28,7 +28,11 @@ export async function findScrollableAncestor(page, selector) {
         const graspId = current.getAttribute('data-grasp-id');
         if (graspId) return `[data-grasp-id="${graspId}"]`;
         const classes = [...current.classList].map((cls) => `.${CSS.escape(cls)}`).join('');
-        return `${current.tagName.toLowerCase()}${classes}`;
+        const candidateSelector = `${current.tagName.toLowerCase()}${classes}`;
+        const matches = document.querySelectorAll(candidateSelector);
+        if (matches.length === 1 && matches[0] === current) {
+          return candidateSelector;
+        }
       }
 
       current = current.parentElement;
@@ -72,10 +76,11 @@ async function warmupMouseIfNeeded(page) {
 }
 
 /**
- * Scroll the page or container by a given amount using real CDP wheel events.
+ * Scroll the page via CDP wheel events or scroll a specific container via JS when a selector is provided.
  * @param {import('playwright').Page} page
  * @param {'up'|'down'|'left'|'right'} direction
  * @param {number} [amount=600]
+ * @param {{ selector?: string }} [options]
  */
 export async function scroll(page, direction, amount = 600, options = {}) {
   const validDirections = ['up', 'down', 'left', 'right'];

@@ -74,13 +74,13 @@ export function registerActionTools(server, state, deps = {}) {
   const getBrowserInstance = deps.getBrowserInstance ?? (() => readBrowserInstance(process.env.CHROME_CDP_URL || 'http://localhost:9222'));
   const readFastPathContent = deps.readFastPath ?? readFastPath;
 
+  const dialogListeners = new WeakSet();
+  const consoleListeners = new WeakSet();
   state.pendingDialog = state.pendingDialog ?? null;
-  state._dialogPageId = state._dialogPageId ?? null;
   async function ensureDialogListener(page) {
     if (!page || typeof page.on !== 'function') return;
-    const pageId = page._guid ?? page.url?.() ?? null;
-    if (state._dialogPageId === pageId) return;
-    state._dialogPageId = pageId;
+    if (dialogListeners.has(page)) return;
+    dialogListeners.add(page);
     page.on('dialog', (dialog) => {
       state.pendingDialog = {
         type: dialog.type(),
@@ -92,12 +92,10 @@ export function registerActionTools(server, state, deps = {}) {
   }
 
   if (!state.consoleLogs) state.consoleLogs = [];
-  state._consolePageId = state._consolePageId ?? null;
   function ensureConsoleListener(page) {
     if (!page || typeof page.on !== 'function') return;
-    const pageId = page._guid ?? page.url?.() ?? null;
-    if (state._consolePageId === pageId) return;
-    state._consolePageId = pageId;
+    if (consoleListeners.has(page)) return;
+    consoleListeners.add(page);
     page.on('console', (msg) => {
       state.consoleLogs.push({
         level: msg.type(),
@@ -566,7 +564,7 @@ export function registerActionTools(server, state, deps = {}) {
   server.registerTool(
     'scroll',
     {
-      description: 'Scroll the page or a specific container by pixel amount. Use hint_id to scroll a nested scrollable area (e.g. sidebar, chat list) instead of the whole page. Returns scroll position (scrollTop/scrollHeight). NOTE: If your goal is to make a known element visible, use scroll_into_view instead — it is a single call and much more accurate.',
+      description: 'Scroll the page or a specific container by pixel amount. Use hint_id to scroll a nested scrollable area (e.g. sidebar, chat list) instead of the whole page. Returns scroll position for the active axis. NOTE: If your goal is to make a known element visible, use scroll_into_view instead — it is a single call and much more accurate.',
       inputSchema: {
         direction: z.enum(['up', 'down', 'left', 'right']).describe('Scroll direction'),
         amount: z.number().int().positive().optional().describe('Scroll distance in pixels (default: 600). Use small values like 50-150 for precise scrolling.'),
@@ -603,16 +601,25 @@ export function registerActionTools(server, state, deps = {}) {
           scrollTop: Math.round(target.scrollTop),
           scrollHeight: Math.round(target.scrollHeight),
           clientHeight: Math.round(target.clientHeight),
+          scrollLeft: Math.round(target.scrollLeft),
+          scrollWidth: Math.round(target.scrollWidth),
+          clientWidth: Math.round(target.clientWidth),
           atTop: target.scrollTop <= 0,
           atBottom: target.scrollTop + target.clientHeight >= target.scrollHeight - 1,
+          atLeft: target.scrollLeft <= 0,
+          atRight: target.scrollLeft + target.clientWidth >= target.scrollWidth - 1,
         };
       }, scrollTarget);
 
       const targetLabel = scrollTarget ? `container ${scrollTarget}` : 'page';
       await audit('scroll', `${direction} ${amount} target=${targetLabel}`, null, state);
 
+      const isVertical = direction === 'up' || direction === 'down';
       const posInfo = scrollInfo
-        ? ` Position: ${scrollInfo.scrollTop}/${scrollInfo.scrollHeight}px.${scrollInfo.atTop ? ' [AT TOP]' : ''}${scrollInfo.atBottom ? ' [AT BOTTOM]' : ''}`
+        ? ` Position: ${isVertical ? scrollInfo.scrollTop : scrollInfo.scrollLeft}/${isVertical ? scrollInfo.scrollHeight : scrollInfo.scrollWidth}px.` +
+          `${isVertical
+            ? `${scrollInfo.atTop ? ' [AT TOP]' : ''}${scrollInfo.atBottom ? ' [AT BOTTOM]' : ''}`
+            : `${scrollInfo.atLeft ? ' [AT LEFT]' : ''}${scrollInfo.atRight ? ' [AT RIGHT]' : ''}`}`
         : '';
       return textResponse(
         `Scrolled ${targetLabel} ${direction} by ${amount}px.${posInfo}`,
@@ -1216,12 +1223,12 @@ export function registerActionTools(server, state, deps = {}) {
 
       try {
         if (text) {
-          await page.locator(`text=${text}`).first().waitFor({ state: 'visible', timeout });
+          await page.getByText(text).first().waitFor({ state: 'visible', timeout });
           await audit('wait_for', `text "${text}" appeared`, null, state);
           return textResponse(`Text "${text}" appeared on the page.`);
         }
         if (text_gone) {
-          await page.locator(`text=${text_gone}`).first().waitFor({ state: 'hidden', timeout });
+          await page.getByText(text_gone).first().waitFor({ state: 'hidden', timeout });
           await audit('wait_for', `text "${text_gone}" gone`, null, state);
           return textResponse(`Text "${text_gone}" is no longer visible.`);
         }
