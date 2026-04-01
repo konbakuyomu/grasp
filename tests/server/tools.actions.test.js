@@ -435,3 +435,147 @@ test('get_page_summary falls back to the old path on non-BOSS pages', async () =
     main_text: 'Example page text.',
   });
 });
+
+test('get_tabs returns injected tab metadata', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const state = { pageState: { currentRole: 'content', graspConfidence: 'high' }, handoff: { state: 'idle' } };
+
+  registerActionTools(server, state, {
+    getTabs: async () => ([
+      { index: 0, title: 'Example', url: 'https://example.com', isUser: true },
+      { index: 1, title: 'Docs', url: 'https://example.com/docs', isUser: true },
+    ]),
+  });
+
+  const tool = calls.find((entry) => entry.name === 'get_tabs');
+  const result = await tool.handler();
+
+  assert.match(result.content[0].text, /\[0\] Example — https:\/\/example\.com/);
+  assert.match(result.content[0].text, /\[1\] Docs — https:\/\/example\.com\/docs/);
+  assert.equal(result.meta.tabs.length, 2);
+});
+
+test('new_tab opens a tab after runtime confirmation and syncs page state', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com/new',
+    title: () => 'New Tab',
+  });
+  const state = {
+    hintMap: [],
+    pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'idle' },
+    runtimeConfirmation: {
+      instance_key: 'windowed|Chrome/136.0.7103.114|1.3',
+      display: 'windowed',
+      browser: 'Chrome/136.0.7103.114',
+      protocolVersion: '1.3',
+      confirmed_at: 0,
+    },
+  };
+  let syncCalls = 0;
+
+  registerActionTools(server, state, {
+    newTab: async (url) => {
+      assert.equal(url, 'https://example.com/new');
+      return page;
+    },
+    syncPageState: async (_page, currentState, options) => {
+      syncCalls += 1;
+      assert.deepEqual(options, { force: true });
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+    getBrowserInstance: async () => ({
+      browser: 'Chrome/136.0.7103.114',
+      protocolVersion: '1.3',
+      headless: false,
+      display: 'windowed',
+      warning: null,
+    }),
+  });
+
+  const tool = calls.find((entry) => entry.name === 'new_tab');
+  const result = await tool.handler({ url: 'https://example.com/new' });
+
+  assert.equal(syncCalls, 1);
+  assert.match(result.content[0].text, /Opened new tab: https:\/\/example\.com\/new/);
+  assert.equal(result.meta.url, 'https://example.com/new');
+});
+
+test('handle_dialog accepts pending dialogs and clears dialog state', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  let acceptedText = null;
+  const state = {
+    hintMap: [],
+    pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false },
+    handoff: { state: 'idle' },
+    runtimeConfirmation: {
+      instance_key: 'windowed|Chrome/136.0.7103.114|1.3',
+      display: 'windowed',
+      browser: 'Chrome/136.0.7103.114',
+      protocolVersion: '1.3',
+      confirmed_at: 0,
+    },
+    pendingDialog: {
+      type: 'prompt',
+      message: 'Your name?',
+      defaultValue: '',
+      ref: {
+        accept: async (text) => {
+          acceptedText = text;
+        },
+        dismiss: async () => undefined,
+      },
+    },
+  };
+
+  registerActionTools(server, state, {
+    getBrowserInstance: async () => ({
+      browser: 'Chrome/136.0.7103.114',
+      protocolVersion: '1.3',
+      headless: false,
+      display: 'windowed',
+      warning: null,
+    }),
+  });
+
+  const tool = calls.find((entry) => entry.name === 'handle_dialog');
+  const result = await tool.handler({ action: 'accept', text: 'Copilot' });
+
+  assert.equal(acceptedText, 'Copilot');
+  assert.equal(state.pendingDialog, null);
+  assert.match(result.content[0].text, /Dialog accepted\. Type: prompt, Message: "Your name\?"/);
+});
+
+test('get_console_logs filters entries and clears the buffer when requested', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    on: () => undefined,
+  });
+  const state = {
+    hintMap: [],
+    pageState: { currentRole: 'content', graspConfidence: 'high' },
+    handoff: { state: 'idle' },
+    consoleLogs: [
+      { level: 'error', text: 'boom', timestamp: 1 },
+      { level: 'info', text: 'ok', timestamp: 2 },
+    ],
+  };
+
+  registerActionTools(server, state, {
+    getActivePage: async () => page,
+  });
+
+  const tool = calls.find((entry) => entry.name === 'get_console_logs');
+  const result = await tool.handler({ level: 'error', clear: true });
+
+  assert.match(result.content[0].text, /\[error\] boom/);
+  assert.equal(result.meta.count, 1);
+  assert.equal(result.meta.total, 2);
+  assert.deepEqual(state.consoleLogs, []);
+});
