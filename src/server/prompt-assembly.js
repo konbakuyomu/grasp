@@ -58,7 +58,7 @@ function inferPromptSurfaceKey({ boundaryKey, status, result = {}, route = {}, p
     return 'checkpoint_handoff';
   }
 
-  if (status === 'gated') {
+  if (status === 'blocked_for_handoff' || status === 'ready_to_resume' || status === 'needs_attention') {
     return 'checkpoint_handoff';
   }
 

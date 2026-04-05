@@ -110,28 +110,27 @@ function detectWorkspaceSignals({ url, title = '', bodyText = '', headings = [],
   const text = bodyText.toLowerCase();
 
   const signals = [];
+  const workspacePath = hasWorkspacePathEvidence(url);
 
-
-
-  if (hasWorkspacePathEvidence(url)) {
+  if (workspacePath) {
 
     signals.push('workspace_path');
 
   }
 
-  if (containsAnySignal(text, WORKSPACE_SIGNAL_DICTIONARY.composerPrompts)) {
+  if (workspacePath && containsAnySignal(text, WORKSPACE_SIGNAL_DICTIONARY.composerPrompts)) {
 
     signals.push('workspace_composer_text');
 
   }
 
-  if (containsAnySignal(text, WORKSPACE_SIGNAL_DICTIONARY.threadContext)) {
+  if (workspacePath && containsAnySignal(text, WORKSPACE_SIGNAL_DICTIONARY.threadContext)) {
 
     signals.push('workspace_thread_text');
 
   }
 
-  if (navs >= 6) {
+  if (workspacePath && navs >= 6) {
 
     signals.push('workspace_navigation');
 
@@ -250,7 +249,7 @@ function classifyPageRole({ url, title = '', bodyText = '', nodes = 0, forms = 0
     return 'search';
   }
   const hasFormText = formHints.some((hint) => text.includes(hint));
-  const hasStrongFormSignals = forms >= 1 && hasFormText;
+  const hasStrongFormSignals = forms >= 1 && hasFormText && navs < 6;
   const hasDenseStandaloneForm = forms >= 3 && navs < 6 && nodes <= 120;
   if (hasStrongFormSignals || hasDenseStandaloneForm) {
     return 'form';

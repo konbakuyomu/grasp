@@ -1,6 +1,7 @@
 import { textResponse } from './responses.js';
 import { buildAgentBoundary, buildAgentBoundaryLines } from './route-boundary.js';
 import { buildAgentPrompt } from './prompt-assembly.js';
+import { buildTaskContract, buildTaskLines, buildDeliverySummary } from './task-contract.js';
 
 function normalizeLines(value) {
   return Array.isArray(value) ? value : [value];
@@ -98,6 +99,7 @@ export function buildGatewayResponse({
   runtime = {},
   route = null,
   error_code = null,
+  verification = null,
   message,
 }) {
   const agentBoundary = buildAgentBoundary({
@@ -123,8 +125,19 @@ export function buildGatewayResponse({
     continuation,
     runtime,
   });
+  const task = buildTaskContract({
+    status,
+    page,
+    continuation,
+    route,
+    errorCode: error_code,
+    verification,
+  });
+  const delivery = buildDeliverySummary(result);
+  const taskLines = buildTaskLines(task, verification, delivery);
+
   const lines = message
-    ? [...normalizeLines(message), ...boundaryLines].filter(Boolean)
+    ? [...normalizeLines(message), ...taskLines, ...boundaryLines].filter(Boolean)
     : [
         `Status: ${status}`,
         `Page: ${page?.title ?? 'unknown'}`,
@@ -132,18 +145,21 @@ export function buildGatewayResponse({
         runtime?.instance?.display ? `Instance: ${runtime.instance.display}` : null,
         runtime?.instance?.warning ? `Instance warning: ${runtime.instance.warning}` : null,
         route?.selected_mode ? `Route: ${route.selected_mode}` : null,
+        ...taskLines,
         ...boundaryLines,
         result.summary ? `Summary: ${result.summary}` : null,
-        continuation.suggested_next_action ? `Next: ${continuation.suggested_next_action}` : null,
       ].filter(Boolean);
 
   return textResponse(lines, {
     status,
+    task,
     page,
     result,
     continuation,
     evidence,
     runtime,
+    ...(verification ? { verification } : {}),
+    ...(delivery ? { delivery } : {}),
     ...(runtimeState ? { runtime_state: runtimeState } : {}),
     ...(agentBoundary ? { agent_boundary: agentBoundary } : {}),
     ...(agentPrompt ? { agent_prompt: agentPrompt } : {}),

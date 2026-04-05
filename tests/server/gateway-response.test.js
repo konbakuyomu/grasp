@@ -4,7 +4,7 @@ import { buildGatewayResponse } from '../../src/server/gateway-response.js';
 
 test('buildGatewayResponse returns the normalized gateway shape', () => {
   const response = buildGatewayResponse({
-    status: 'direct',
+    status: 'ready',
     page: { title: 'Example', url: 'https://example.com', page_role: 'content', risk_gate: false, grasp_confidence: 'high' },
     result: { summary: 'Summary', main_text: 'Body', structured_sections: [], markdown: '# Example\n\nBody' },
     continuation: { can_continue: true, suggested_next_action: 'extract', handoff_state: 'idle' },
@@ -12,7 +12,7 @@ test('buildGatewayResponse returns the normalized gateway shape', () => {
   });
 
   assert.equal(response.content[0].type, 'text');
-  assert.equal(response.meta.status, 'direct');
+  assert.equal(response.meta.status, 'ready');
   assert.equal(response.meta.page.title, 'Example');
   assert.equal(response.meta.result.markdown, '# Example\n\nBody');
   assert.equal(response.meta.continuation.suggested_next_action, 'extract');
@@ -20,7 +20,7 @@ test('buildGatewayResponse returns the normalized gateway shape', () => {
 
 test('buildGatewayResponse includes runtime instance metadata when provided', () => {
   const response = buildGatewayResponse({
-    status: 'direct',
+    status: 'ready',
     page: { title: 'Example', url: 'https://example.com', page_role: 'content', risk_gate: false, grasp_confidence: 'high' },
     continuation: { can_continue: true, suggested_next_action: 'inspect', handoff_state: 'idle' },
     runtime: {
@@ -39,7 +39,7 @@ test('buildGatewayResponse includes runtime instance metadata when provided', ()
 
 test('buildGatewayResponse injects agent boundary guidance into text and meta', () => {
   const response = buildGatewayResponse({
-    status: 'direct',
+    status: 'ready',
     page: { title: 'Example', url: 'https://example.com', page_role: 'content', risk_gate: false, grasp_confidence: 'high' },
     continuation: { can_continue: true, suggested_next_action: 'extract', handoff_state: 'idle' },
     route: { selected_mode: 'public_read' },
@@ -57,7 +57,7 @@ test('buildGatewayResponse injects agent boundary guidance into text and meta', 
 
 test('buildGatewayResponse includes a runtime state register for the active route', () => {
   const response = buildGatewayResponse({
-    status: 'direct',
+    status: 'ready',
     page: { title: 'Example', url: 'https://example.com', page_role: 'content', risk_gate: false, grasp_confidence: 'high' },
     continuation: { can_continue: true, suggested_next_action: 'extract', handoff_state: 'idle' },
     route: { selected_mode: 'public_read' },

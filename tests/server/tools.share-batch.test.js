@@ -100,7 +100,7 @@ test('extract_batch returns structured records and writes CSV/JSON/Markdown arti
     include_markdown: true,
   });
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.result.records.length, 2);
   assert.deepEqual(result.meta.result.records[0].record, {
     职位: '前端工程师',
@@ -114,6 +114,218 @@ test('extract_batch returns structured records and writes CSV/JSON/Markdown arti
   assert.equal(result.meta.result.artifacts.csv.path, '/tmp/batch-extract.csv');
   assert.equal(result.meta.result.artifacts.json.path, '/tmp/batch-extract.json');
   assert.equal(result.meta.result.artifacts.markdown.path, '/tmp/batch-extract.md');
+  assert.deepEqual(result.meta.result.batch_summary, {
+    total: 2,
+    status_counts: { ready: 2 },
+    complete_count: 0,
+    incomplete_count: 2,
+    blocked_count: 0,
+  });
+  assert.deepEqual(result.meta.result.recovery_plan, {
+    continue_now: [],
+    inspect_or_fill_gaps: ['https://example.com/alice', 'https://example.com/bob'],
+    request_handoff: [],
+    resume_after_handoff: [],
+    preheat_session: [],
+    inspect_manually: [],
+  });
+  assert.deepEqual(result.meta.result.records[0].route, {
+    selected_mode: 'public_read',
+    next_step: 'extract',
+    requires_human: false,
+    failure_type: 'partial_extraction',
+    error_code: 'PARTIAL_EXTRACTION',
+  });
+  assert.equal(result.meta.result.records[0].task.status, 'needs_attention');
+  assert.equal(result.meta.result.records[0].task.next_step, 'inspect_or_fill_gaps');
+  assert.equal(result.meta.result.records[0].task.can_continue, true);
+  assert.equal(result.meta.result.records[0].verification.status, 'partial');
+  assert.deepEqual(result.meta.result.records[0].verification.missing_evidence, ['邮箱']);
+  assert.equal(result.meta.verification.status, 'partial');
+});
+
+test('extract_batch keeps task.status as mixed when batch aggregate is mixed on checkpoint tail page', async () => {
+  const { calls, server, state } = createServerAndState();
+  const runtimeInstance = {
+    browser: 'Chrome/136.0.7103.114',
+    protocolVersion: '1.3',
+    display: 'windowed',
+    headless: false,
+    warning: null,
+  };
+  storeRuntimeConfirmation(state, runtimeInstance);
+
+  const pages = new Map([
+    ['https://example.com/alice', createFakePage({
+      url: () => 'https://example.com/alice',
+      title: () => 'Alice Profile',
+    })],
+    ['https://example.com/checkpoint', createFakePage({
+      url: () => 'https://example.com/checkpoint',
+      title: () => 'Cloudflare Challenge',
+    })],
+  ]);
+  let currentUrl = 'https://example.com/alice';
+
+  registerGatewayTools(server, state, {
+    getBrowserInstance: async () => runtimeInstance,
+    enterWithStrategy: async ({ url }) => {
+      currentUrl = url;
+      state.pageState = url.includes('/checkpoint')
+        ? { currentRole: 'checkpoint', graspConfidence: 'low', riskGateDetected: true }
+        : { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false };
+      return {
+        url,
+        title: await pages.get(url).title(),
+        preflight: { session_trust: 'high', recommended_entry_strategy: 'direct_goto' },
+        pageState: state.pageState,
+        handoff: state.handoff,
+        entry_method: 'direct_goto',
+        final_url: url,
+        verified: true,
+      };
+    },
+    getActivePage: async () => pages.get(currentUrl),
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+    waitUntilStable: async () => ({ stable: true, attempts: 1 }),
+    extractMainContent: async () => ({
+      title: 'Alice Profile',
+      text: '职位: 前端工程师\n公司名称: OpenAI\n城市: San Francisco',
+    }),
+    extractStructuredContent: async () => ({
+      requested_fields: ['职位', '公司名称', '邮箱'],
+      record: { 职位: '前端工程师', 公司名称: 'OpenAI' },
+      missing_fields: ['邮箱'],
+      evidence: [{ field: '职位', label: '职位', value: '前端工程师', strategy: 'inline_pair' }],
+    }),
+    writeArtifact: async (artifact) => ({
+      path: `/tmp/${artifact.filename}`,
+      bytes: Buffer.isBuffer(artifact.data)
+        ? artifact.data.length
+        : Buffer.byteLength(String(artifact.data), artifact.encoding === 'utf8' ? 'utf8' : undefined),
+    }),
+  });
+
+  const extractBatch = calls.find((tool) => tool.name === 'extract_batch');
+  const result = await extractBatch.handler({
+    urls: ['https://example.com/alice', 'https://example.com/checkpoint'],
+    fields: ['职位', '公司名称', '邮箱'],
+  });
+
+  assert.equal(result.meta.status, 'mixed');
+  assert.equal(result.meta.task.status, 'mixed');
+  assert.equal(result.meta.task.can_continue, false);
+  assert.equal(result.meta.verification.status, 'partial');
+  assert.equal(result.meta.result.records[0].status, 'ready');
+  assert.equal(result.meta.result.records[1].status, 'blocked_for_handoff');
+  assert.deepEqual(result.meta.result.batch_summary, {
+    total: 2,
+    status_counts: { ready: 1, blocked_for_handoff: 1 },
+    complete_count: 0,
+    incomplete_count: 1,
+    blocked_count: 1,
+  });
+  assert.deepEqual(result.meta.result.recovery_plan, {
+    continue_now: [],
+    inspect_or_fill_gaps: ['https://example.com/alice'],
+    request_handoff: ['https://example.com/checkpoint'],
+    resume_after_handoff: [],
+    preheat_session: [],
+    inspect_manually: [],
+  });
+  assert.deepEqual(result.meta.result.records[1].route, {
+    selected_mode: 'handoff',
+    next_step: 'request_handoff',
+    requires_human: true,
+    failure_type: 'route_blocked',
+    error_code: 'ROUTE_BLOCKED',
+  });
+  assert.equal(result.meta.result.records[1].task.status, 'blocked_for_handoff');
+  assert.equal(result.meta.result.records[1].task.next_step, 'request_handoff');
+  assert.equal(result.meta.result.records[1].task.can_continue, false);
+  assert.equal(result.meta.result.records[1].verification.status, 'blocked');
+});
+
+test('extract_batch keeps verification.status as blocked when all URLs are blocked', async () => {
+  const { calls, server, state } = createServerAndState();
+  const runtimeInstance = {
+    browser: 'Chrome/136.0.7103.114',
+    protocolVersion: '1.3',
+    display: 'windowed',
+    headless: false,
+    warning: null,
+  };
+  storeRuntimeConfirmation(state, runtimeInstance);
+
+  const pages = new Map([
+    ['https://example.com/checkpoint-a', createFakePage({
+      url: () => 'https://example.com/checkpoint-a',
+      title: () => 'Cloudflare Challenge A',
+    })],
+    ['https://example.com/checkpoint-b', createFakePage({
+      url: () => 'https://example.com/checkpoint-b',
+      title: () => 'Cloudflare Challenge B',
+    })],
+  ]);
+  let currentUrl = 'https://example.com/checkpoint-a';
+
+  registerGatewayTools(server, state, {
+    getBrowserInstance: async () => runtimeInstance,
+    enterWithStrategy: async ({ url }) => {
+      currentUrl = url;
+      state.pageState = { currentRole: 'checkpoint', graspConfidence: 'low', riskGateDetected: true };
+      return {
+        url,
+        title: await pages.get(url).title(),
+        preflight: { session_trust: 'high', recommended_entry_strategy: 'direct_goto' },
+        pageState: state.pageState,
+        handoff: state.handoff,
+        entry_method: 'direct_goto',
+        final_url: url,
+        verified: true,
+      };
+    },
+    getActivePage: async () => pages.get(currentUrl),
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+    waitUntilStable: async () => ({ stable: true, attempts: 1 }),
+    writeArtifact: async (artifact) => ({
+      path: `/tmp/${artifact.filename}`,
+      bytes: Buffer.isBuffer(artifact.data)
+        ? artifact.data.length
+        : Buffer.byteLength(String(artifact.data), artifact.encoding === 'utf8' ? 'utf8' : undefined),
+    }),
+  });
+
+  const extractBatch = calls.find((tool) => tool.name === 'extract_batch');
+  const result = await extractBatch.handler({
+    urls: ['https://example.com/checkpoint-a', 'https://example.com/checkpoint-b'],
+    fields: ['职位', '公司名称', '邮箱'],
+  });
+
+  assert.equal(result.meta.status, 'blocked_for_handoff');
+  assert.equal(result.meta.task.status, 'blocked_for_handoff');
+  assert.equal(result.meta.verification.status, 'blocked');
+  assert.deepEqual(result.meta.result.batch_summary, {
+    total: 2,
+    status_counts: { blocked_for_handoff: 2 },
+    complete_count: 0,
+    incomplete_count: 0,
+    blocked_count: 2,
+  });
+  assert.deepEqual(result.meta.result.recovery_plan, {
+    continue_now: [],
+    inspect_or_fill_gaps: [],
+    request_handoff: ['https://example.com/checkpoint-a', 'https://example.com/checkpoint-b'],
+    resume_after_handoff: [],
+    preheat_session: [],
+    inspect_manually: [],
+  });
 });
 
 test('share_page writes markdown, screenshot, and pdf artifacts from the current page projection', async () => {
@@ -211,7 +423,7 @@ test('explain_share_card exposes layout metadata for the current page share card
   const explainShareCard = calls.find((tool) => tool.name === 'explain_share_card');
   const result = await explainShareCard.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.result.explain_card.engine, 'pretext');
   assert.equal(result.meta.result.explain_card.estimated_height, 360);
   assert.match(result.content[0].text, /Explain card engine: pretext/);
@@ -254,7 +466,7 @@ test('share_page falls back when share card measurement crashes', async () => {
   assert.equal(writtenArtifacts.length, 1);
   assert.equal(result.meta.result.explain_card.engine, 'fallback');
   assert.equal(result.meta.result.artifact.format, 'markdown');
-  assert.match(result.content[0].text, /Status: direct/);
+  assert.match(result.content[0].text, /Status: ready/);
 });
 
 test('explain_share_card falls back when share card measurement crashes', async () => {
@@ -283,7 +495,7 @@ test('explain_share_card falls back when share card measurement crashes', async 
   const explainShareCard = calls.find((tool) => tool.name === 'explain_share_card');
   const result = await explainShareCard.handler({});
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.result.explain_card.engine, 'fallback');
   assert.match(result.content[0].text, /Explain card engine: fallback/);
 });

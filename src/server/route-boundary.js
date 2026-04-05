@@ -93,10 +93,12 @@ export function inferAgentBoundaryKey({
   page = null,
 } = {}) {
   if (
-    status === 'handoff_required'
-    || status === 'gated'
+    status === 'blocked_for_handoff'
+    || status === 'ready_to_resume'
+    || status === 'needs_attention'
     || route?.selected_mode === 'handoff'
     || continuation?.suggested_next_action === 'request_handoff'
+    || continuation?.suggested_next_action === 'resume_after_handoff'
   ) {
     return 'handoff';
   }

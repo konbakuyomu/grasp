@@ -5,7 +5,7 @@ import { buildAgentPrompt } from '../../src/server/prompt-assembly.js';
 
 test('buildAgentPrompt assembles a public_read prompt from route and content surface', () => {
   const prompt = buildAgentPrompt({
-    status: 'direct',
+    status: 'ready',
     page: {
       title: 'Example',
       url: 'https://example.com',
@@ -36,7 +36,7 @@ test('buildAgentPrompt assembles a public_read prompt from route and content sur
 
 test('buildAgentPrompt assembles a workspace thread prompt pack from workspace surface evidence', () => {
   const prompt = buildAgentPrompt({
-    status: 'direct',
+    status: 'ready',
     page: {
       title: '公众号',
       url: 'https://mp.weixin.qq.com/cgi-bin/message?t=message/list&count=20&day=7',
@@ -75,7 +75,7 @@ test('buildAgentPrompt assembles a workspace thread prompt pack from workspace s
 
 test('buildAgentPrompt sharpens the form prompt when the current form still needs review', () => {
   const prompt = buildAgentPrompt({
-    status: 'direct',
+    status: 'ready',
     page: {
       title: 'Apply',
       url: 'https://example.com/apply',

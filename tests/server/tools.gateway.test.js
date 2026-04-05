@@ -28,22 +28,38 @@ function createBossPage({ url, title, selectors }) {
   });
 }
 
-test('resolveGatewayDeps preserves explicit overrides and fills defaults', async () => {
-  const explicit = {
-    enterWithStrategy: async () => 'entered',
-    getActivePage: async () => 'page',
-  };
-
-  const resolved = resolveGatewayDeps(explicit);
-
-  assert.equal(resolved.enter, explicit.enterWithStrategy);
-  assert.equal(resolved.getPage, explicit.getActivePage);
-  assert.equal(typeof resolved.getBrowserInstance, 'function');
-  assert.equal(typeof resolved.writeArtifact, 'function');
-  assert.equal(typeof resolved.clearHandoff, 'function');
-});
-
-test('entry returns a gateway response with strategy metadata', async () => {
+test('resolveGatewayDeps preserves explicit overrides and fills defaults', async () => {
+
+  const explicit = {
+
+    enterWithStrategy: async () => 'entered',
+
+    getActivePage: async () => 'page',
+
+  };
+
+
+
+  const resolved = resolveGatewayDeps(explicit);
+
+
+
+  assert.equal(resolved.enter, explicit.enterWithStrategy);
+
+  assert.equal(resolved.getPage, explicit.getActivePage);
+
+  assert.equal(typeof resolved.getBrowserInstance, 'function');
+
+  assert.equal(typeof resolved.writeArtifact, 'function');
+
+  assert.equal(typeof resolved.clearHandoff, 'function');
+
+});
+
+
+
+test('entry returns a gateway response with strategy metadata', async () => {
+
   const calls = [];
   const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
   const state = { pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
@@ -52,7 +68,14 @@ test('entry returns a gateway response with strategy metadata', async () => {
   registerGatewayTools(server, state, {
     enterWithStrategy: async (args) => {
       receivedArgs = args;
-      return { url: 'https://example.com', title: 'Example', preflight: { session_trust: 'high' }, pageState: state.pageState };
+      return {
+        url: 'https://example.com',
+        title: 'Example',
+        preflight: { session_trust: 'high' },
+        pageState: state.pageState,
+        verified: true,
+        final_url: 'https://example.com',
+      };
     },
     getBrowserInstance: async () => null,
   });
@@ -60,9 +83,9 @@ test('entry returns a gateway response with strategy metadata', async () => {
   const entry = calls.find((tool) => tool.name === 'entry');
   const result = await entry.handler({ url: 'https://example.com' });
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.page.url, 'https://example.com');
-  assert.equal(result.meta.continuation.suggested_next_action, 'inspect');
+  assert.equal(result.meta.continuation.suggested_next_action, 'extract');
   assert.equal(result.meta.agent_boundary.key, 'public_read');
   assert.deepEqual(result.meta.runtime_state, {
     goal: 'Read the current page on the active route and extract useful content.',
@@ -75,7 +98,7 @@ test('entry returns a gateway response with strategy metadata', async () => {
       handoff_state: 'idle',
       instance_display: null,
     },
-    next_gap: 'Need fresh readable-page evidence before deeper actions.',
+    next_gap: 'Need fresh extraction evidence from the current readable page.',
   });
   assert.equal(receivedArgs.deps.auditName, 'entry');
 });
@@ -121,7 +144,7 @@ test('entry reports the resolved final url instead of echoing the requested targ
   assert.equal(result.meta.page.url, 'https://www.zhipin.com/zhengzhou/?seoRefer=index');
 });
 
-test('entry marks handoff or preheat outcomes as gated', async () => {
+test('entry marks handoff or preheat outcomes as blocked_for_handoff', async () => {
   const calls = [];
   const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
   const state = {
@@ -138,7 +161,7 @@ test('entry marks handoff or preheat outcomes as gated', async () => {
   const entry = calls.find((tool) => tool.name === 'entry');
   const result = await entry.handler({ url: 'https://github.com' });
 
-  assert.equal(result.meta.status, 'gated');
+  assert.equal(result.meta.status, 'blocked_for_handoff');
   assert.equal(result.meta.page.url, 'https://example.com/current');
   assert.equal(result.meta.continuation.can_continue, false);
   assert.equal(result.meta.continuation.suggested_next_action, 'request_handoff');
@@ -193,7 +216,7 @@ test('entry ignores stale handoff state after a verified direct public entry', a
   const result = await entry.handler({ url: 'https://example.com', intent: 'extract' });
   const inspectResult = await inspect.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.agent_boundary.key, 'public_read');
   assert.equal(result.meta.route.selected_mode, 'public_read');
   assert.equal(result.meta.continuation.suggested_next_action, 'extract');
@@ -201,7 +224,7 @@ test('entry ignores stale handoff state after a verified direct public entry', a
   assert.equal(state.handoff.expected_url_contains, null);
   assert.equal(persisted.length, 1);
   assert.equal(persisted[0].state, 'idle');
-  assert.equal(inspectResult.meta.status, 'direct');
+  assert.equal(inspectResult.meta.status, 'ready');
   assert.equal(inspectResult.meta.continuation.suggested_next_action, 'extract');
 });
 
@@ -229,7 +252,7 @@ test('entry ignores stale handoff state after a verified direct form entry', asy
   const entry = calls.find((tool) => tool.name === 'entry');
   const result = await entry.handler({ url: 'https://httpbin.org/forms/post', intent: 'submit' });
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.agent_boundary.key, 'form_runtime');
   assert.equal(result.meta.route.selected_mode, 'form_runtime');
   assert.equal(result.meta.continuation.suggested_next_action, 'form_inspect');
@@ -264,31 +287,73 @@ test('entry keeps public navigation-heavy pages on extract instead of workspace 
   assert.equal(result.meta.continuation.suggested_next_action, 'extract');
 });
 
-test('inspect returns current gateway page status without raw primitive wording', async () => {
-  const calls = [];
-  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
-  const page = createFakePage({
-    url: () => 'https://example.com',
-    title: () => 'Example',
-  });
-  const state = { pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
+test('inspect returns current gateway page status without raw primitive wording', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com',
+    title: () => 'Example',
+  });
+  const state = { pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
+
+  registerGatewayTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      return currentState;
+    },
+  });
+
+  const inspect = calls.find((tool) => tool.name === 'inspect');
+  const result = await inspect.handler();
+
+  assert.equal(result.meta.status, 'ready');
+  assert.equal(result.meta.page.page_role, 'content');
+  assert.equal(result.meta.continuation.suggested_next_action, 'extract');
+  assert.deepEqual(result.meta.task, {
+    status: 'ready',
+    reason: 'The runtime has enough context to continue on the current route.',
+    next_step: 'extract',
 
-  registerGatewayTools(server, state, {
-    getActivePage: async () => page,
-    syncPageState: async (_page, currentState) => {
-      currentState.pageState = state.pageState;
-      return currentState;
-    },
-  });
+    next_step_human: 'extract',
 
-  const inspect = calls.find((tool) => tool.name === 'inspect');
-  const result = await inspect.handler();
+    can_continue: true,
+  });
+  assert.doesNotMatch(result.content[0].text, /page_role|handoff_state|suggested_next_action/);
+});
+
+test('continue returns normalized task status and reason for blocked handoff states', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://example.com/checkpoint',
+    title: () => 'Checkpoint',
+  });
+  const state = {
+    pageState: { currentRole: 'checkpoint', graspConfidence: 'low', riskGateDetected: true },
+    handoff: { state: 'handoff_required' },
+  };
+
+  registerGatewayTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => currentState,
+    getBrowserInstance: async () => null,
+  });
+
+  const tool = calls.find((entry) => entry.name === 'continue');
+  const result = await tool.handler();
+
+  assert.equal(result.meta.status, 'blocked_for_handoff');
+  assert.deepEqual(result.meta.task, {
+    status: 'blocked_for_handoff',
+    reason: 'A human step is required before the task can continue.',
+    next_step: 'request_handoff',
 
-  assert.equal(result.meta.status, 'direct');
-  assert.equal(result.meta.page.page_role, 'content');
-  assert.equal(result.meta.continuation.suggested_next_action, 'extract');
-  assert.doesNotMatch(result.content[0].text, /page_role|handoff_state|suggested_next_action/);
-});
+    next_step_human: 'request_handoff',
+
+    can_continue: false,
+  });
+});
 
 test('inspect tolerates transient page.title failures after a redirecting runtime navigation', async () => {
   const calls = [];
@@ -320,7 +385,7 @@ test('inspect tolerates transient page.title failures after a redirecting runtim
   const inspect = calls.find((tool) => tool.name === 'inspect');
   const result = await inspect.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.page.title, 'BOSS直聘');
   assert.equal(titleReads, 2);
 });
@@ -440,7 +505,7 @@ test('extract returns summary, main text, and markdown in one payload', async ()
   const extract = calls.find((tool) => tool.name === 'extract');
   const result = await extract.handler({ include_markdown: true });
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.result.engine, 'data');
   assert.equal(result.meta.result.surface, 'content');
   assert.equal(result.meta.result.title, 'Example');
@@ -490,7 +555,7 @@ test('extract_structured returns a structured record plus JSON and Markdown expo
     include_markdown: true,
   });
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.result.engine, 'data');
   assert.equal(result.meta.result.title, 'Candidate Profile');
   assert.deepEqual(result.meta.result.structured.requested_fields, ['职位', '公司名称', '邮箱']);
@@ -546,7 +611,7 @@ test('extract uses fast path on BOSS pages and skips heavy read dependencies', a
 
   assert.equal(receivedPageArg.state, state);
   assert.equal(syncCalls, 1);
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.result.engine, 'runtime');
   assert.equal(result.meta.result.surface, 'search');
   assert.equal(result.meta.result.title, 'BOSS直聘 - 搜索');
@@ -656,18 +721,18 @@ test('inspect and extract block checkpoint pages with handoff guidance', async (
   const inspectResult = await inspect.handler();
   const extractResult = await extract.handler();
 
-  assert.equal(inspectResult.meta.status, 'handoff_required');
+  assert.equal(inspectResult.meta.status, 'blocked_for_handoff');
   assert.equal(inspectResult.meta.continuation.can_continue, false);
   assert.equal(inspectResult.meta.continuation.suggested_next_action, 'request_handoff');
   assert.equal(inspectResult.meta.continuation.handoff_state, 'handoff_required');
 
-  assert.equal(extractResult.meta.status, 'handoff_required');
+  assert.equal(extractResult.meta.status, 'blocked_for_handoff');
   assert.equal(extractResult.meta.continuation.can_continue, false);
   assert.equal(extractResult.meta.continuation.suggested_next_action, 'request_handoff');
   assert.equal(extractResult.meta.continuation.handoff_state, 'handoff_required');
 });
 
-test('inspect and extract stay blocked while handoff recovery is still in progress', async () => {
+test('inspect and extract expose blocked_for_handoff or ready_to_resume while handoff recovery is in progress', async () => {
   for (const handoffState of ['handoff_in_progress', 'awaiting_reacquisition']) {
     const calls = [];
     const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
@@ -697,14 +762,17 @@ test('inspect and extract stay blocked while handoff recovery is still in progre
     const inspectResult = await inspect.handler();
     const extractResult = await extract.handler();
 
-    assert.equal(inspectResult.meta.status, 'handoff_required');
+    const expectedStatus = handoffState === 'awaiting_reacquisition' ? 'ready_to_resume' : 'blocked_for_handoff';
+    const expectedNextAction = handoffState === 'awaiting_reacquisition' ? 'resume_after_handoff' : 'request_handoff';
+
+    assert.equal(inspectResult.meta.status, expectedStatus);
     assert.equal(inspectResult.meta.continuation.can_continue, false);
-    assert.equal(inspectResult.meta.continuation.suggested_next_action, 'request_handoff');
+    assert.equal(inspectResult.meta.continuation.suggested_next_action, expectedNextAction);
     assert.equal(inspectResult.meta.continuation.handoff_state, handoffState);
 
-    assert.equal(extractResult.meta.status, 'handoff_required');
+    assert.equal(extractResult.meta.status, expectedStatus);
     assert.equal(extractResult.meta.continuation.can_continue, false);
-    assert.equal(extractResult.meta.continuation.suggested_next_action, 'request_handoff');
+    assert.equal(extractResult.meta.continuation.suggested_next_action, expectedNextAction);
     assert.equal(extractResult.meta.continuation.handoff_state, handoffState);
   }
 });
@@ -732,7 +800,7 @@ test('continue returns handoff guidance when the page is gated', async () => {
   const continueTool = calls.find((tool) => tool.name === 'continue');
   const result = await continueTool.handler();
 
-  assert.equal(result.meta.status, 'handoff_required');
+  assert.equal(result.meta.status, 'blocked_for_handoff');
   assert.equal(result.meta.continuation.suggested_next_action, 'request_handoff');
 });
 
@@ -759,7 +827,7 @@ test('continue suggests form_inspect on direct form pages', async () => {
   const continueTool = calls.find((tool) => tool.name === 'continue');
   const result = await continueTool.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.continuation.can_continue, true);
   assert.equal(result.meta.continuation.suggested_next_action, 'form_inspect');
 });
@@ -787,7 +855,7 @@ test('continue suggests workspace_inspect on direct workspace pages', async () =
   const continueTool = calls.find((tool) => tool.name === 'continue');
   const result = await continueTool.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.continuation.can_continue, true);
   assert.equal(result.meta.continuation.suggested_next_action, 'workspace_inspect');
 });
@@ -820,7 +888,7 @@ test('continue prefers workspace_inspect when the page affordance is a workspace
   const continueTool = calls.find((tool) => tool.name === 'continue');
   const result = await continueTool.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.continuation.can_continue, true);
   assert.equal(result.meta.continuation.suggested_next_action, 'workspace_inspect');
 });
@@ -859,9 +927,46 @@ test('continue prefers workspace_inspect when the hint map exposes a left-rail w
   const continueTool = calls.find((tool) => tool.name === 'continue');
   const result = await continueTool.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.equal(result.meta.continuation.can_continue, true);
   assert.equal(result.meta.continuation.suggested_next_action, 'workspace_inspect');
+});
+
+test('continue keeps public navigation-heavy pages on extract when there is no real workspace evidence', async () => {
+  const calls = [];
+  const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
+  const page = createFakePage({
+    url: () => 'https://github.com/',
+    title: () => 'GitHub · Change is constant. GitHub keeps you ahead. · GitHub',
+  });
+  const state = {
+    pageState: {
+      currentRole: 'navigation-heavy',
+      workspaceSurface: 'list',
+      workspaceSignals: [],
+      graspConfidence: 'medium',
+      riskGateDetected: false,
+    },
+    hintMap: [],
+    handoff: { state: 'idle' },
+  };
+
+  registerGatewayTools(server, state, {
+    getActivePage: async () => page,
+    syncPageState: async (_page, currentState) => {
+      currentState.pageState = state.pageState;
+      currentState.hintMap = state.hintMap;
+      return currentState;
+    },
+  });
+
+  const continueTool = calls.find((tool) => tool.name === 'continue');
+  const result = await continueTool.handler();
+
+  assert.equal(result.meta.status, 'ready');
+  assert.equal(result.meta.route.selected_mode, 'public_read');
+  assert.equal(result.meta.continuation.can_continue, true);
+  assert.equal(result.meta.continuation.suggested_next_action, 'extract');
 });
 
 test('continue returns resumed workspace guidance with workspace_inspect as the next step', async () => {
@@ -892,23 +997,30 @@ test('continue returns resumed workspace guidance with workspace_inspect as the 
   assert.equal(result.meta.continuation.suggested_next_action, 'workspace_inspect');
 });
 
-test('smoke: entry returns direct on a direct page', async () => {
+test('smoke: entry returns ready on a verified direct page', async () => {
   const calls = [];
   const server = { registerTool(name, spec, handler) { calls.push({ name, handler }); } };
   const state = { pageState: { currentRole: 'content', graspConfidence: 'high', riskGateDetected: false }, handoff: { state: 'idle' } };
 
   registerGatewayTools(server, state, {
-    enterWithStrategy: async () => ({ url: 'https://example.com/', title: 'Example Domain', preflight: { session_trust: 'high' }, pageState: state.pageState }),
+    enterWithStrategy: async () => ({
+      url: 'https://example.com/',
+      title: 'Example Domain',
+      preflight: { session_trust: 'high' },
+      pageState: state.pageState,
+      verified: true,
+      final_url: 'https://example.com/',
+    }),
     getBrowserInstance: async () => null,
   });
 
   const entry = calls.find((tool) => tool.name === 'entry');
   const result = await entry.handler({ url: 'https://example.com/' });
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.deepEqual(result.meta.result, {});
   assert.equal(result.meta.continuation.can_continue, true);
-  assert.equal(result.meta.continuation.suggested_next_action, 'inspect');
+  assert.equal(result.meta.continuation.suggested_next_action, 'extract');
 });
 
 test('smoke: extract returns non-empty main text on a readable page', async () => {
@@ -933,7 +1045,7 @@ test('smoke: extract returns non-empty main text on a readable page', async () =
   const extract = calls.find((tool) => tool.name === 'extract');
   const result = await extract.handler();
 
-  assert.equal(result.meta.status, 'direct');
+  assert.equal(result.meta.status, 'ready');
   assert.ok(result.meta.result.main_text.length > 0);
   assert.equal(result.meta.continuation.can_continue, true);
   assert.equal(result.meta.continuation.suggested_next_action, 'inspect');
@@ -962,7 +1074,7 @@ test('smoke: continue returns handoff guidance on a handoff-required page', asyn
   const continueTool = calls.find((tool) => tool.name === 'continue');
   const result = await continueTool.handler();
 
-  assert.equal(result.meta.status, 'handoff_required');
+  assert.equal(result.meta.status, 'blocked_for_handoff');
   assert.equal(result.meta.continuation.can_continue, false);
   assert.equal(result.meta.continuation.suggested_next_action, 'request_handoff');
   assert.equal(result.meta.continuation.handoff_state, 'handoff_required');

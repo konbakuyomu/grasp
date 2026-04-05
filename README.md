@@ -2,58 +2,52 @@
 
 [English](./README.md) · [简体中文](./README.zh-CN.md) · [GitHub](https://github.com/Yuzc-001/grasp) · [Issues](https://github.com/Yuzc-001/grasp/issues)
 
-[![Version](https://img.shields.io/badge/version-v0.6.7-0B1738?style=flat-square)](./CHANGELOG.md)
-
+[![Version](https://img.shields.io/badge/version-v0.6.8-0B1738?style=flat-square)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-23C993?style=flat-square)](./LICENSE)
-
 [![Validated](https://img.shields.io/badge/validated-Claude%20Code%20%7C%20Codex%20%7C%20Cursor%20%7C%20Alma-5B6CFF?style=flat-square)](./README.md#quickstart)
 
+> **Grasp is a route-aware browser runtime for agents. It is not just for opening pages — it helps AI keep real web tasks moving forward in the browser.**
 
-> **Grasp is a route-aware AI Browser Runtime for agents. One URL, one best path.**
+Real web tasks rarely stay on a clean, ideal path. They cross login state, workspace surfaces, real forms, and gated pages. They get interrupted by checkpoints, human handoff, or the need to pause and continue later. Many tools can open a page and even get through a few steps. The hard part is keeping the task going when the workflow becomes real — without restarting, guessing success, or losing context.
 
+That is the layer Grasp is built for. Given a URL and an intent, Grasp chooses the best path first, works inside a dedicated local browser runtime, and checks actions against actual page state. When a workflow needs a human step or has to continue later, it can return to the same browser context with evidence and keep going from there.
 
+It is a runtime for real web tasks — built to keep work continuous, verifiable, and recoverable in the browser.
 
-Grasp runs locally, keeps a dedicated `chrome-grasp` profile, and gives agents a persistent, human-visible, recoverable web runtime instead of disposable tabs and one-off scripts. That dedicated profile is Grasp's runtime boundary, not "whatever local browser window the user happens to have open right now." The product promise in `v0.6.7` is simple: given a URL and an intent, Grasp should choose the best path first, keep that decision explainable, require confirmed runtime context before page-changing actions, continue on the same runtime path, surface the active route boundary directly in high-level tool responses, refuse high-level form/workspace actions when the current surface boundary does not match, and attach a route/surface-aware prompt package agents can actually execute against.
-
-
-
-- Current package release: `v0.6.7`
-
-- Start here: [Browser Runtime Landing](./docs/browser-runtime-landing.html)
-- Public docs for the runtime surface: [docs/README.md](./docs/README.md)
+- Current package release: `v0.6.8`
+- Browser Runtime Landing: [docs/browser-runtime-landing.html](./docs/browser-runtime-landing.html)
+- Docs entry: [docs/README.md](./docs/README.md)
 - Release notes: [CHANGELOG.md](./CHANGELOG.md)
 
 ---
 
-## Where the moat comes from
+## Why Grasp exists
 
-Anyone can open a page. Very few systems can keep real web work continuous, verifiable, and recoverable.
+Opening a page is easy. Keeping real web work moving is hard.
 
-Grasp compounds around the parts that are hard to fake:
+Real web tasks do not live inside a single happy path. They run into login state, checkpoint pages, dynamic surfaces, real forms, authenticated workspaces, and moments where a human has to step in. If a system can only start over when that happens — or simply assumes an action succeeded — it is still doing one-off page interaction, not task delivery you can trust.
 
-- `Continuity`: tasks survive login state, checkpoint pages, and context switching instead of restarting from scratch
-- `Verification`: actions are checked against actual page changes instead of being treated as success by default
-- `Recovery`: humans can step in and agents can resume in the same browser context with evidence
+Grasp is built for a different layer: helping an agent continue working when a task depends on state, runs into blocked pages, or gets interrupted. That means choosing a route before acting, confirming the current state before deciding the next step, verifying that the page actually changed as expected, and preserving evidence when the workflow needs handoff or later recovery in the same browser context.
 
-That is why Grasp is not just a browser automation wrapper. Over time, that is how a browser runtime becomes the operating layer agents rely on for real web work.
+---
 
-## Route by Evidence
+## What makes Grasp different
 
-Users should not need to remember whether this URL belongs on a public reader, a live authenticated session, a workspace flow, a real form flow, or a handoff path.
+Grasp is not about having more browser features. It focuses on the parts that decide whether a real task can continue or not:
 
-That route choice is the product.
+- **Continuity** — tasks survive login state, checkpoint pages, and context switching instead of restarting from scratch
+- **Verification** — actions are not treated as success by default; they are checked against actual page changes
+- **Contract truthfulness** — task status is explicit (`ready`, `blocked_for_handoff`, `ready_to_resume`, `resumed`, `needs_attention`, `warmup`, `mixed`), so mixed outcomes are represented as mixed instead of being flattened into success
+- **Recovery** — human handoff is part of the workflow, not an edge case
+- **Route choice** — users and agents do not need to reason about which low-level path a URL should follow
 
-Public modes:
+That is what makes Grasp more than a tool that can operate a page. It is closer to a runtime that can carry real web tasks forward.
 
-- `public_read`
-- `live_session`
-- `workspace_runtime`
-- `form_runtime`
-- `handoff`
+---
 
-Provider choice stays internal. Users and agents should reason about modes and evidence, not about which package or adapter happens to run underneath.
+## The smallest proof of the runtime
 
-## Proof of the runtime
+The smallest proof of Grasp is not that it can open a page. It is that the same task can continue inside the same browser context:
 
 ```text
 entry(url, intent)
@@ -64,12 +58,12 @@ resume_after_handoff()
 continue()
 ```
 
-If the same task can survive a human step, return to the same browser context, and continue from evidence instead of replaying from scratch, the product has crossed from browser wrapper into runtime.
+If a task can survive a human step, return to the same browser context, and continue from page evidence instead of restarting, that is runtime behavior.
 
 What it does not claim:
 
 - universal CAPTCHA bypass
-- guaranteed full autonomy on every gated site
+- guaranteed autonomous completion on every high-friction site
 - evidence-free recovery
 - that any one workflow defines the whole product
 
@@ -83,15 +77,15 @@ What it does not claim:
 npx -y @yuzc-001/grasp
 ```
 
-This detects Chrome or Edge, launches the dedicated `chrome-grasp` profile, verifies a visible browser runtime, and helps you connect your AI client.
+Grasp detects Chrome or Edge, launches the dedicated `chrome-grasp` profile, establishes a visible local browser runtime, and helps you connect it to your AI client.
 
-By default this connects Grasp's own CDP runtime. Unless you explicitly point it at a different CDP endpoint, it is not claiming control over an arbitrary browser session the user is currently viewing.
+By default, this connects Grasp’s own CDP runtime. Unless you explicitly point it at another CDP endpoint, it is not claiming control over an arbitrary browser window the user happens to have open.
 
-If you already have the CLI installed, `grasp connect` does the same local bootstrap step.
+If you already have the CLI installed, `grasp connect` performs the same local bootstrap step.
 
-Bootstrap also establishes the remote-debugging/CDP connection Grasp needs. In the normal local path, users do not need to prepare that separately.
+Bootstrap also establishes the remote-debugging / CDP connection Grasp needs. In the normal local path, users do not need to prepare that separately.
 
-### 2. Connect your client
+### 2. Connect your AI client
 
 Claude Code:
 
@@ -121,125 +115,143 @@ command = "npx"
 args = ["-y", "@yuzc-001/grasp"]
 ```
 
-### 3. Get your first win
+### 3. Get your first real win
 
 Tell your AI to:
 
 1. call `get_status`
-2. use `entry` on a real page with an intent such as `extract` or `workspace`
-3. call `inspect`, then `extract`, `extract_structured`, or `continue`
-4. call `explain_route` or run `grasp explain`
+2. use `entry(url, intent)` on a real page
+3. call `inspect`
+4. continue with `extract`, `extract_structured`, `continue`, or the handoff / resume flow as needed
+5. use `explain_route` or run `grasp explain` when you want the route rationale
 
-The first win is not just that Grasp opens a page. It is that the agent can choose a route, explain why, and stay inside the same runtime when the task gets real.
+The first win is not simply that a page opens. It is that the system can choose a path, understand the current state, and stay inside the same runtime as the task becomes more complex.
 
-Reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
-Manual smoke playbook: [docs/reference/smoke-paths.md](./docs/reference/smoke-paths.md)
+References:
+
+- [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+- [docs/reference/smoke-paths.md](./docs/reference/smoke-paths.md)
 
 ---
 
-## Runtime Workflows
+## Core workflows
 
 ### Real browsing first
 
-Start from the real page and the real session whenever possible. Grasp should read and act on the current browser state before falling back to heavier observation or search-like shortcuts.
+Whenever Grasp can enter a real page and a real session, it should prefer reading and acting from the current browser state instead of falling back to heavier observation chains or search-like shortcuts.
 
 ### Public read
 
-Use `entry(url, intent="extract")` -> `inspect` -> `extract` when the page is public and already readable.
+When a page is publicly readable, use:
+
+```text
+entry(url, intent="extract") -> inspect -> extract
+```
 
 What you get:
 
 - route decision
-- current page status
+- current page state
 - readable content
-- a suggested next action
+- suggested next action
 
 ### Structured extraction
 
-Use `extract_structured(fields=[...])` when you want the current page converted into a field-based record while staying on the same runtime path.
+When you want the current page converted into a field-based record, use `extract_structured(fields=[...])` while staying on the same runtime path.
 
 What you get:
 
-- field-based `record` output
+- a field-based `record`
 - `missing_fields` when the page does not expose a requested value clearly enough
-- field evidence with the matched label and extraction strategy
+- evidence for matched labels and extraction strategy
 - JSON export, plus optional Markdown export
 
-Use `extract_batch(urls=[...], fields=[...])` when you want the same structured extraction contract applied across multiple URLs in sequence on the same runtime.
+When you want to apply the same extraction contract across multiple URLs, use `extract_batch(urls=[...], fields=[...])`.
 
 What you get:
 
-- one structured `record` per visited URL
-- exported `CSV` and `JSON` artifacts, plus optional Markdown bundle
-- per-URL status when a page stays gated or needs handoff instead of pretending the scrape succeeded
+- one structured `record` per URL
+- exported `CSV` and `JSON` artifacts, plus an optional Markdown bundle
+- honest per-URL contract status, including mixed outcomes (`meta.status = mixed`) instead of pretending the batch fully succeeded
+- a batch summary in `meta.result.batch_summary`, plus explicit recovery guidance in `meta.result.recovery_plan`
+- per-record route / task / verification truth in `meta.result.records[*]`
 
 ### Share layer
 
-Use `share_page(format="markdown" | "screenshot" | "pdf")` when the result needs to be forwarded to someone else without sending them the original inaccessible page link.
+When the result needs to be forwarded to someone else and the original page itself is not suitable to share directly, use `share_page(format="markdown" | "screenshot" | "pdf")`.
 
 What you get:
 
-- a shareable artifact written locally
-- a clean share document generated from the current page projection instead of the raw page chrome
-- the same runtime explanation path, so the artifact can still be traced back to the page and route that produced it
+- a locally written share artifact
+- a clean share document generated from the current page projection rather than raw page chrome
+- the same runtime traceability back to the page and route that produced it
 
-Use `explain_share_card()` when you want the human-facing share layout explained before exporting it. This uses a Pretext-backed text layout estimate when available, so the share layer can reason about title and summary density without touching the current page DOM.
-
-### Fast-path adapters
-
-Site-specific fast reads no longer need to live inside the core router. `v0.6.3` keeps the built-in BOSS path as an adapter and lets you extend the same mechanism locally.
-
-What is supported:
-
-- drop `.js` adapters into `~/.grasp/site-adapters`
-- or point `GRASP_SITE_ADAPTER_DIR` at a different adapter directory
-- use a lightweight `.skill` file as a manifest with `entry:` or `adapter:` pointing at a `.js` adapter
-
-A `.js` adapter only needs two capabilities:
-
-- `matches(url)` or `match(url)`
-- `read(page)`
-
-The `.skill` file is only a local manifest that points at the adapter entry. It is not a separate runtime layer.
+When you want to understand how the share card will be laid out before exporting it, use `explain_share_card()`. When available, this uses Pretext-backed layout estimates to reason about title and summary density without touching the current page DOM.
 
 ### Live session
 
-Use `entry(url, intent="act")` or `entry(url, intent="workspace")` when the task depends on the current browser session.
+When the task depends on current login state, a real workspace, or a form flow, start with `entry(url, intent="act" | "workspace" | "submit")`.
 
-`entry` can now surface route evidence such as:
+`entry` can return evidence such as:
 
 - selected mode
 - confidence
 - fallback chain
-- whether a human is required
+- whether human handoff is required
 
-### Handoff and resume
+### Handoff and recovery
 
-When a human step is required, keep the workflow continuous instead of pretending it is fully autonomous:
+When a workflow needs a human step, do not pretend the system is fully autonomous. Keep that human step inside the task flow:
 
-1. `entry` or `continue` shows the page is gated
-2. `request_handoff` records the required human step
-3. `mark_handoff_done` marks the step complete
+1. `entry` or `continue` sees that the page is blocked
+2. `request_handoff` records the human step
+3. `mark_handoff_done` marks it complete
 4. `resume_after_handoff` reacquires the page with continuation evidence
-5. `continue` decides what should happen next
-
-Runtime story: [docs/product/browser-runtime-for-agents.md](./docs/product/browser-runtime-for-agents.md)
+5. `continue` decides whether to proceed, wait, or request another handoff
 
 ---
 
-## Product Model
+## Real forms
 
-### How the layers fit
+When the page is a real form, prefer the specialized form surface:
 
-The product is the route-aware Agent Web Runtime itself. `npx -y @yuzc-001/grasp` / `grasp connect` bootstrap it locally, MCP tools expose the public runtime surface, and the skill is the recommended task-facing layer on top of the same runtime.
+```text
+form_inspect -> fill_form / set_option / set_date -> verify_form -> safe_submit
+```
 
-For the canonical delivery-surface mapping, see [Browser Runtime for Agents](./docs/product/browser-runtime-for-agents.md).
+The default behavior is conservative:
+
+- `fill_form` only writes `safe` fields
+- `review` and `sensitive` fields are held back for explicit review
+- `safe_submit` previews blockers before deciding whether to submit for real
+
+Form surface reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
+
+---
+
+## Authenticated workspaces
+
+When the current page is a dynamic authenticated workspace, start with `workspace_inspect` to understand the state and the next recommended step.
+
+A typical loop is:
+
+```text
+workspace_inspect -> select_live_item -> workspace_inspect -> draft_action -> workspace_inspect -> execute_action -> verify_outcome
+```
+
+By default, Grasp drafts first, requires explicit confirmation for irreversible actions, and verifies that the workspace actually moved into the next state.
+
+These workspace flows are examples of the browser runtime in practice. BOSS is one example, and WeChat Official Accounts or Xiaohongshu are similar examples, but none of them define the product boundary.
+
+---
+
+## Product principles
 
 ### Modes, not providers
 
-Grasp keeps a single agent-facing interface. The core promise is not a collection of site integrations; it is that any real webpage can be entered, routed, and worked through the same task model.
+Grasp keeps one agent-facing interface. Its core promise is not “many integrations for many sites,” but that any real webpage can enter the same routing and task model.
 
-The public surface should expose modes, not provider names:
+The public surface exposes modes, not provider names:
 
 - `public_read`
 - `live_session`
@@ -247,56 +259,47 @@ The public surface should expose modes, not provider names:
 - `form_runtime`
 - `handoff`
 
-Provider and adapter choice stays internal. In this slice, `Runtime Engine` remains first-class and `Data Engine` remains a thin read seam for public-web extraction without claiming a fully delivered separate backend.
+Provider and adapter choices stay internal. Users should see route, evidence, risk, and fallback — not underlying implementation wiring.
+
+### One runtime, multiple delivery surfaces
+
+The product itself is the route-aware Agent Web Runtime.
+
+- `npx -y @yuzc-001/grasp` / `grasp connect`: bootstraps the local runtime
+- MCP tools: public runtime surface
+- skill: recommended task-facing layer on top of the same runtime
+
+CLI, MCP, and the skill are delivery surfaces for the same runtime, not separate product identities.
+
+### Fast-path site adapters
+
+Site-specific fast reads do not need to stay hard-coded inside the core router. Current support includes:
+
+- dropping `.js` adapters into `~/.grasp/site-adapters`
+- or pointing `GRASP_SITE_ADAPTER_DIR` to a different adapter directory
+- using a lightweight `.skill` file as a local manifest via `entry:` or `adapter:` pointing to a `.js` adapter
+
+A `.js` adapter only needs two capabilities:
+
+- `matches(url)` or `match(url)`
+- `read(page)`
+
+The `.skill` file here is only a local manifest, not a separate runtime layer.
 
 ---
 
-## Real Forms
+## Advanced runtime primitives
 
-When the page is a real form, use the specialized form surface:
-
-`form_inspect` -> `fill_form` / `set_option` / `set_date` -> `verify_form` -> `safe_submit`
-
-The default behavior is conservative:
-
-- `fill_form` only writes safe fields
-- `review` and `sensitive` fields stay visible so you can inspect them explicitly
-- `safe_submit` starts with preview, so you can check blockers before any real submit
-
-Form surface reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
-
----
-
-## Authenticated Workspaces
-
-Use `workspace_inspect` to inspect a dynamic authenticated workspace and let it suggest the
-next step. A typical loop is `workspace_inspect -> select_live_item -> workspace_inspect ->
-draft_action -> workspace_inspect -> execute_action -> verify_outcome`. By default Grasp drafts
-first, requires explicit confirmation for irreversible actions, and verifies that the workspace
-really moved to the next state.
-
-Workspace surface reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
-
-These workspace flows are examples of the browser runtime in use. BOSS is one example, and the same runtime direction also covers surfaces such as WeChat Official Accounts and Xiaohongshu without collapsing the whole product into any one workflow.
-
-### Basic parallel task state
-
-Grasp does not promise a large scheduler today, but it is moving toward handling more than one task/session context without collapsing everything into one active browser assumption.
-
----
-
-## Advanced Runtime Primitives
-
-The runtime surface is the public default. The lower-level runtime is still available when you need tighter control.
+The high-level runtime surface is the default path. When finer control is needed, lower-level runtime primitives are still available.
 
 Common advanced primitives:
 
-- navigation and state: `navigate`, `get_status`, `get_page_summary`
+- navigation and status: `navigate`, `get_status`, `get_page_summary`
 - visible runtime tabs: `list_visible_tabs`, `select_visible_tab`
 - interaction map: `get_hint_map`
 - verified actions: `click`, `type`, `hover`, `press_key`, `scroll`
 - observation: `watch_element`
-- session strategy and handoff helpers: `preheat_session`, `navigate_with_strategy`, `session_trust_preflight`, `suggest_handoff`, `request_handoff_from_checkpoint`, `request_handoff`, `mark_handoff_in_progress`, `mark_handoff_done`, `resume_after_handoff`, `clear_handoff`
+- session strategy and handoff support: `preheat_session`, `navigate_with_strategy`, `session_trust_preflight`, `suggest_handoff`, `request_handoff_from_checkpoint`, `request_handoff`, `mark_handoff_in_progress`, `mark_handoff_done`, `resume_after_handoff`, `clear_handoff`
 
 Full reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 
@@ -306,30 +309,36 @@ Full reference: [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 
 | Command | Description |
 |:---|:---|
-| `grasp` / `grasp connect` | Set up the local browser runtime |
-| `grasp status` | Show connection state, current tab, and recent activity |
+| `grasp` / `grasp connect` | Bootstrap the local browser runtime |
+| `grasp status` | Show connection status, current tabs, and recent activity |
 | `grasp explain` | Explain the latest route decision |
-| `grasp logs` | View audit log (`~/.grasp/audit.log`) |
-| `grasp logs --lines 20` | Show the last 20 log lines |
-| `grasp logs --follow` | Stream the audit log |
+| `grasp logs` | Read the audit log (`~/.grasp/audit.log`) |
+| `grasp logs --lines 20` | Read the last 20 log lines |
+| `grasp logs --follow` | Follow the log in real time |
+
+---
 
 ## Docs
 
 - [docs/README.md](./docs/README.md)
-- [Browser Runtime Story](./docs/product/browser-runtime-for-agents.md)
+- [Browser Runtime for Agents](./docs/product/browser-runtime-for-agents.md)
 - [docs/reference/mcp-tools.md](./docs/reference/mcp-tools.md)
 - [docs/reference/smoke-paths.md](./docs/reference/smoke-paths.md)
+- [skill/SKILL.md](./skill/SKILL.md)
 
 ## Releases
 
 - [CHANGELOG.md](./CHANGELOG.md)
-- [CHANGELOG.md](./CHANGELOG.md)
+- [docs/release-notes-v0.6.8.md](./docs/release-notes-v0.6.8.md)
+- [docs/release-notes-v0.6.3.md](./docs/release-notes-v0.6.3.md)
+- [docs/release-notes-v0.6.1.md](./docs/release-notes-v0.6.1.md)
 - [docs/release-notes-v0.6.0.md](./docs/release-notes-v0.6.0.md)
 - [docs/release-notes-v0.55.0.md](./docs/release-notes-v0.55.0.md)
+- [docs/release-notes-v0.5.2.md](./docs/release-notes-v0.5.2.md)
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT — see [LICENSE](./LICENSE)
 
 ## Star History
 

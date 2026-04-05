@@ -162,9 +162,20 @@ export async function assessGatewayContinuation(page, state) {
     expected_hint_label: state?.handoff?.expected_hint_label ?? null,
   };
 
-  if (handoffState === 'handoff_required' || handoffState === 'handoff_in_progress' || handoffState === 'awaiting_reacquisition') {
+  if (handoffState === 'awaiting_reacquisition') {
     return {
-      status: 'handoff_required',
+      status: 'ready_to_resume',
+      continuation: {
+        can_continue: false,
+        suggested_next_action: 'resume_after_handoff',
+        handoff_state: handoffState,
+      },
+    };
+  }
+
+  if (handoffState === 'handoff_required' || handoffState === 'handoff_in_progress') {
+    return {
+      status: 'blocked_for_handoff',
       continuation: {
         can_continue: false,
         suggested_next_action: 'request_handoff',
@@ -175,7 +186,7 @@ export async function assessGatewayContinuation(page, state) {
 
   if (gatedByPage) {
     return {
-      status: 'gated',
+      status: 'blocked_for_handoff',
       continuation: {
         can_continue: false,
         suggested_next_action: 'request_handoff',
@@ -187,8 +198,7 @@ export async function assessGatewayContinuation(page, state) {
   const continuation = await assessResumeContinuation(page, state, anchors);
   const workspaceHintItems = deriveWorkspaceHintItems(state?.hintMap ?? []);
   const workspaceLike = pageState.currentRole === 'workspace'
-    || pageState.currentRole === 'navigation-heavy'
-    || pageState.workspaceSurface === 'list'
+    || (pageState.workspaceSurface != null && pageState.currentRole !== 'navigation-heavy')
     || (pageState.workspaceSignals ?? []).includes('workspace_navigation')
     || workspaceHintItems.length > 0;
   const suggestedDirectAction = workspaceLike
@@ -197,12 +207,12 @@ export async function assessGatewayContinuation(page, state) {
       ? 'form_inspect'
       : continuation.suggested_next_action === 'needs_confirmation'
         ? 'extract'
-      : continuation.suggested_next_action;
+        : continuation.suggested_next_action;
 
   if (handoffState === 'resumed_verified' || handoffState === 'resumed_unverified') {
     if (continuation.task_continuation_ok === false) {
       return {
-        status: 'failed',
+        status: 'needs_attention',
         continuation: {
           ...continuation,
           can_continue: false,
@@ -224,7 +234,7 @@ export async function assessGatewayContinuation(page, state) {
     }
 
     return {
-      status: 'failed',
+      status: 'needs_attention',
       continuation: {
         ...continuation,
         can_continue: false,
@@ -235,7 +245,7 @@ export async function assessGatewayContinuation(page, state) {
 
   if (continuation.task_continuation_ok === false) {
     return {
-      status: 'failed',
+      status: 'needs_attention',
       continuation: {
         ...continuation,
         can_continue: false,
@@ -245,7 +255,7 @@ export async function assessGatewayContinuation(page, state) {
   }
 
   return {
-    status: 'direct',
+    status: 'ready',
     continuation: {
       ...continuation,
       suggested_next_action: suggestedDirectAction,

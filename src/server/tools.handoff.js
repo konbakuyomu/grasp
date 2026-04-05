@@ -15,6 +15,7 @@ import {
 import { attachHandoffTaskMetadata, readHandoffState, writeHandoffState } from '../grasp/handoff/persist.js';
 import { capturePageEvidence } from '../grasp/verify/evidence.js';
 import { assessResumeContinuation } from './continuity.js';
+import { buildResumeVerification, buildTaskContract, buildTaskLines } from './task-contract.js';
 
 export function getHandoffContinuationAnchors(handoff = {}) {
   return {
@@ -45,6 +46,12 @@ export function shouldMarkResumeVerified({
 
 export function registerHandoffTools(server, state, deps = {}) {
   const getPage = deps.getActivePage ?? getActivePage;
+  const syncState = deps.syncPageState ?? syncPageState;
+  const readState = deps.readHandoffState ?? readHandoffState;
+  const writeState = deps.writeHandoffState ?? writeHandoffState;
+  const captureEvidence = deps.capturePageEvidence ?? capturePageEvidence;
+  const assessContinuation = deps.assessResumeContinuation ?? assessResumeContinuation;
+  const auditEvent = deps.audit ?? audit;
 
   server.registerTool(
     'request_handoff',
@@ -62,23 +69,23 @@ export function registerHandoffTools(server, state, deps = {}) {
     },
     async ({ reason, note, expected_url_contains, expected_page_role, expected_selector, continuation_goal, expected_hint_label }) => {
       state.handoff = attachHandoffTaskMetadata(
-        requestHandoff(await readHandoffState(), reason, note ?? null, {
+        requestHandoff(await readState(), reason, note ?? null, {
           expected_url_contains,
           expected_page_role,
           expected_selector,
           continuation_goal,
           expected_hint_label,
         }),
-        state
+        state,
       );
-      await writeHandoffState(state.handoff);
-      await audit('handoff_request', `${reason}${note ? ` :: ${note}` : ''}`);
+      await writeState(state.handoff);
+      await auditEvent('handoff_request', `${reason}${note ? ` :: ${note}` : ''}`);
       return textResponse([
         `Handoff requested: ${reason}`,
         ...(note ? [`Note: ${note}`] : []),
         'State: handoff_required',
       ], { handoff: state.handoff });
-    }
+    },
   );
 
   server.registerTool(
@@ -90,15 +97,15 @@ export function registerHandoffTools(server, state, deps = {}) {
       },
     },
     async ({ note } = {}) => {
-      state.handoff = attachHandoffTaskMetadata(markHandoffInProgress(await readHandoffState(), note ?? null), state);
-      await writeHandoffState(state.handoff);
-      await audit('handoff_progress', note ?? 'in progress');
+      state.handoff = attachHandoffTaskMetadata(markHandoffInProgress(await readState(), note ?? null), state);
+      await writeState(state.handoff);
+      await auditEvent('handoff_progress', note ?? 'in progress');
       return textResponse([
         'Handoff is now in progress.',
         ...(note ? [`Note: ${note}`] : []),
         'State: handoff_in_progress',
       ], { handoff: state.handoff });
-    }
+    },
   );
 
   server.registerTool(
@@ -110,16 +117,16 @@ export function registerHandoffTools(server, state, deps = {}) {
       },
     },
     async ({ note } = {}) => {
-      state.handoff = attachHandoffTaskMetadata(markAwaitingReacquisition(await readHandoffState(), note ?? null), state);
-      await writeHandoffState(state.handoff);
-      await audit('handoff_done', note ?? 'awaiting reacquisition');
+      state.handoff = attachHandoffTaskMetadata(markAwaitingReacquisition(await readState(), note ?? null), state);
+      await writeState(state.handoff);
+      await auditEvent('handoff_done', note ?? 'awaiting reacquisition');
       return textResponse([
         'Human step marked done.',
         ...(note ? [`Note: ${note}`] : []),
         'State: awaiting_reacquisition',
         'Next: call resume_after_handoff to reacquire page state.',
       ], { handoff: state.handoff });
-    }
+    },
   );
 
   server.registerTool(
@@ -138,8 +145,9 @@ export function registerHandoffTools(server, state, deps = {}) {
     },
     async ({ verify = true, note, expected_url_contains, expected_page_role, expected_selector, continuation_goal, expected_hint_label } = {}) => {
       const page = await getPage({ state });
-      await syncPageState(page, state, { force: true });
-      const currentHandoff = await readHandoffState();
+      await syncState(page, state, { force: true });
+
+      const currentHandoff = await readState();
       const anchors = {
         ...getHandoffContinuationAnchors(currentHandoff),
         expected_url_contains: expected_url_contains ?? currentHandoff.expected_url_contains,
@@ -148,7 +156,8 @@ export function registerHandoffTools(server, state, deps = {}) {
         continuation_goal: continuation_goal ?? currentHandoff.continuation_goal,
         expected_hint_label: expected_hint_label ?? currentHandoff.expected_hint_label,
       };
-      const continuation = await assessResumeContinuation(page, state, anchors);
+
+      const continuation = await assessContinuation(page, state, anchors);
       const checkpointStillPresent = state.pageState?.currentRole === 'checkpoint' || state.pageState?.riskGateDetected === true;
       const effectiveContinuation = checkpointStillPresent
         ? {
@@ -157,7 +166,8 @@ export function registerHandoffTools(server, state, deps = {}) {
             suggested_next_action: state.pageState?.suggestedNextAction ?? 'handoff_required',
           }
         : continuation;
-      const evidence = await capturePageEvidence(page, state, {
+
+      const evidence = await captureEvidence(page, state, {
         action: 'resume_after_handoff',
         details: {
           pageIdentity: state.pageState?.pageIdentity ?? null,
@@ -165,7 +175,6 @@ export function registerHandoffTools(server, state, deps = {}) {
         },
       });
 
-      const taskVerified = continuation.task_continuation_ok;
       const shouldVerify = shouldMarkResumeVerified({
         verify,
         checkpointStillPresent,
@@ -178,20 +187,43 @@ export function registerHandoffTools(server, state, deps = {}) {
       } else {
         state.handoff = attachHandoffTaskMetadata(markResumedUnverified(currentHandoff, evidence, note ?? null), state);
       }
-      await writeHandoffState(state.handoff);
-      await audit('handoff_resume', `${state.handoff.state}${note ? ` :: ${note}` : ''}`);
+      await writeState(state.handoff);
+      await auditEvent('handoff_resume', `${state.handoff.state}${note ? ` :: ${note}` : ''}`);
+
+      const verification = buildResumeVerification({
+        handoffState: state.handoff.state,
+        checkpointStillPresent,
+        continuation: effectiveContinuation,
+      });
+      const task = buildTaskContract({
+        status: state.handoff.state === 'resumed_verified' ? 'resumed' : 'failed',
+        page: {
+          url: page.url(),
+          page_role: state.pageState?.currentRole ?? 'unknown',
+          risk_gate: state.pageState?.riskGateDetected ?? false,
+        },
+        continuation: {
+          ...effectiveContinuation,
+          can_continue: effectiveContinuation.continuation_ready === true,
+          handoff_state: state.handoff.state,
+        },
+        verification,
+      });
 
       return textResponse([
+        ...buildTaskLines(task, verification),
         `Resume state: ${state.handoff.state}`,
         `Page role: ${state.pageState?.currentRole ?? 'unknown'}`,
-        `Grasp confidence: ${state.pageState?.graspConfidence ?? 'unknown'}`,
         `Reacquired: ${state.pageState?.reacquired ? 'yes' : 'no'}`,
-        `Task continuation: ${taskVerified === null ? 'not checked' : taskVerified ? 'ok' : 'failed'}`,
-        `Checkpoint still present: ${checkpointStillPresent ? 'yes' : 'no'}`,
-        `Continuation ready: ${effectiveContinuation.continuation_ready ? 'yes' : 'no'}`,
-        `Suggested next action: ${effectiveContinuation.suggested_next_action}`,
-      ], { handoff: state.handoff, evidence, continuation: effectiveContinuation, checkpointStillPresent });
-    }
+      ], {
+        handoff: state.handoff,
+        evidence,
+        continuation: effectiveContinuation,
+        checkpointStillPresent,
+        verification,
+        task,
+      });
+    },
   );
 
   server.registerTool(
@@ -201,10 +233,10 @@ export function registerHandoffTools(server, state, deps = {}) {
       inputSchema: {},
     },
     async () => {
-      state.handoff = clearHandoff(await readHandoffState());
-      await writeHandoffState(state.handoff);
-      await audit('handoff_clear', 'idle');
+      state.handoff = clearHandoff(await readState());
+      await writeState(state.handoff);
+      await auditEvent('handoff_clear', 'idle');
       return textResponse('Handoff cleared. State: idle', { handoff: state.handoff });
-    }
+    },
   );
 }

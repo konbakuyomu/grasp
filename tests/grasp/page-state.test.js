@@ -117,6 +117,23 @@ test('wechat official accounts landing page stays content instead of collapsing 
   assert.equal(state.currentRole, 'content');
 });
 
+test('github home marketing page stays navigation-heavy instead of collapsing into form or workspace signals', () => {
+  const state = applySnapshotToPageGraspState(createPageGraspState(), {
+    url: 'https://github.com/',
+    snapshotHash: 'github-home',
+    title: 'GitHub · Change is constant. GitHub keeps you ahead. · GitHub',
+    bodyText: 'Skip to content Navigation Menu Platform Solutions Resources Open Source Enterprise Pricing Search or jump to... Sign in Sign up The future of building happens together Tools and trends evolve, but collaboration endures. With GitHub, developers, agents, and code come together on one platform. Enter your email Sign up for GitHub required fields Try GitHub Copilot free GitHub features A demonstration animation of a code editor using GitHub Copilot Chat.',
+    nodes: 233,
+    forms: 19,
+    navs: 12,
+    headings: ['Navigation Menu', 'The future of building happens together', 'GitHub features'],
+  });
+
+  assert.equal(state.currentRole, 'navigation-heavy');
+  assert.equal(state.workspaceSurface, 'list');
+  assert.deepEqual(state.workspaceSignals, []);
+});
+
 test('page grasp state classifies challenge-style pages as checkpoint', () => {
   const state = applySnapshotToPageGraspState(createPageGraspState(), {
     url: 'https://chatgpt.com/',

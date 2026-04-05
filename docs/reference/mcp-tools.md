@@ -25,7 +25,7 @@ Public route modes:
 | `inspect` | Inspect the current page as runtime state and report the current route metadata for the active task. |
 | `extract` | Extract the current page into a usable content payload while staying on the current route. |
 | `extract_structured` | Extract the current page into a field-based record and return JSON / optional Markdown exports while staying on the current route. |
-| `extract_batch` | Visit multiple URLs through the same runtime path, extract structured records, and write CSV / JSON / optional Markdown artifacts. |
+| `extract_batch` | Visit multiple URLs through the same runtime path, extract structured records, write CSV / JSON / optional Markdown artifacts, and report mixed-task outcomes honestly (batch summary + per-record status + next-step recovery guidance). |
 | `share_page` | Export the current page into a shareable Markdown, screenshot, or PDF artifact built from the current page projection. |
 | `explain_share_card` | Explain how Grasp would lay out the current page as a human-facing share card, using Pretext-backed layout estimates when available. |
 | `continue` | Decide the next continuation step without triggering a browser action and report the current route metadata. |
@@ -40,6 +40,17 @@ Recommended default flow:
 5. if needed, move into handoff and then `resume_after_handoff`
 
 High-level runtime responses now include `agent_boundary` metadata plus a short `Boundary: ...` text block. They also expose `agent_prompt`, which contains the assembled `system_prompt`, prompt segments, and the chosen boundary/surface prompt packs. Treat that prompt package as the executable companion to the boundary contract. If a `form_*` or `workspace_*` tool is called on the wrong surface, Grasp returns `BOUNDARY_MISMATCH` with the correct recovery step instead of attempting the action anyway.
+
+### Task Contract (Truthfulness)
+
+Every high-level tool response includes a normalized task-facing contract in `meta.task`:
+
+- `status`: `ready` | `blocked_for_handoff` | `ready_to_resume` | `resumed` | `needs_attention` | `warmup` | `mixed`
+- `reason`: why the contract is in this state
+- `next_step`: what to do next
+- `can_continue`: whether the runtime can proceed without a human step
+
+For batch workflows, mixed-task honesty matters: if some URLs are extractable while others remain gated/checkpointed, the batch keeps an aggregate `mixed` contract (`meta.status = mixed`) rather than pretending all records are ready. Use `meta.result.batch_summary` as the batch summary, `meta.result.records[*]` for per-record route/task/verification truth, and `meta.result.recovery_plan` for grouped recovery guidance.
 
 Manual smoke playbook: [docs/reference/smoke-paths.md](./smoke-paths.md)
 

@@ -5,7 +5,7 @@ import { buildAgentBoundary } from '../../src/server/route-boundary.js';
 
 test('buildAgentBoundary infers public_read from route mode', () => {
   const boundary = buildAgentBoundary({
-    status: 'direct',
+    status: 'ready',
     route: { selected_mode: 'public_read' },
     continuation: { suggested_next_action: 'extract' },
   });
@@ -17,7 +17,7 @@ test('buildAgentBoundary infers public_read from route mode', () => {
 
 test('buildAgentBoundary infers live_session from route mode', () => {
   const boundary = buildAgentBoundary({
-    status: 'direct',
+    status: 'ready',
     route: { selected_mode: 'live_session' },
     continuation: { suggested_next_action: 'inspect' },
   });
@@ -38,7 +38,7 @@ test('buildAgentBoundary infers session_warmup from warmup status', () => {
 
 test('buildAgentBoundary infers form_runtime from task kind', () => {
   const boundary = buildAgentBoundary({
-    status: 'direct',
+    status: 'ready',
     result: { task_kind: 'form' },
     continuation: { suggested_next_action: 'verify_form' },
   });
@@ -49,7 +49,7 @@ test('buildAgentBoundary infers form_runtime from task kind', () => {
 
 test('buildAgentBoundary infers workspace_runtime from task kind', () => {
   const boundary = buildAgentBoundary({
-    status: 'direct',
+    status: 'ready',
     result: { task_kind: 'workspace' },
     continuation: { suggested_next_action: 'draft_action' },
   });
@@ -58,9 +58,9 @@ test('buildAgentBoundary infers workspace_runtime from task kind', () => {
   assert.equal(boundary.confirmation, 'execute_action(mode="confirm", confirmation="EXECUTE")');
 });
 
-test('buildAgentBoundary infers handoff from gated flow', () => {
+test('buildAgentBoundary infers handoff from blocked_for_handoff flow', () => {
   const boundary = buildAgentBoundary({
-    status: 'gated',
+    status: 'blocked_for_handoff',
     continuation: { suggested_next_action: 'request_handoff' },
   });
 
@@ -71,7 +71,7 @@ test('buildAgentBoundary infers handoff from gated flow', () => {
 
 test('buildAgentBoundary falls back to page role when route metadata is absent', () => {
   const boundary = buildAgentBoundary({
-    status: 'direct',
+    status: 'ready',
     page: { page_role: 'content' },
   });
 

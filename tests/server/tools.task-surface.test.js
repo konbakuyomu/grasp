@@ -87,7 +87,7 @@ test('get_task exposes last result and artifacts for a tracked task', async () =
   const frame = state.taskFrames.get('task-report');
   rememberTaskResult(frame, {
     tool: 'extract_batch',
-    status: 'direct',
+    status: 'ready',
     summary: '2 records',
     page: { url: 'https://example.com/a' },
     artifacts: [{ path: 'C:\\temp\\batch-extract.json' }],
@@ -122,7 +122,7 @@ test('get_governance_status exposes permission mode and preferred tools', async 
   const state = createServerState();
   state.pageState.currentRole = 'content';
   state.lastRouteTrace = {
-    status: 'direct',
+    status: 'ready',
     selected_mode: 'public_read',
     next_step: 'extract',
   };

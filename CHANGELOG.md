@@ -4,6 +4,22 @@ All notable changes to Grasp are documented here.
 
 ---
 
+## v0.6.8 — 2026-04-05
+
+### Added
+- Introduced a normalized task-facing contract status set: `ready`, `blocked_for_handoff`, `ready_to_resume`, `resumed`, `needs_attention`, `warmup`, `mixed`.
+- Batch extraction responses now expose `result.batch_summary`, `result.records[*].route/task/verification`, and `result.recovery_plan`, so mixed outcomes stay explicit and actionable instead of being flattened into success.
+
+### Changed
+- `extract_batch` is documented as a mixed-task honest workflow: per-record route/task/verification stays explicit, and recovery guidance is grouped in `result.recovery_plan`.
+- Docs and release surface are updated to focus this release theme on batch contract truthfulness and mixed-task honesty.
+
+### Validated
+- Version/release surface consistency checks pass for `v0.6.8`.
+- Mixed-task honesty: batch runs that include gated/checkpoint URLs keep an aggregate `mixed` contract instead of pretending all records are ready.
+
+---
+
 ## v0.6.7 — 2026-04-04
 
 ### Added

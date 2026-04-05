@@ -1,41 +1,25 @@
 import { z } from 'zod';
-
 import { buildGatewayResponse } from './gateway-response.js';
 import { extractObservedContent } from './observe.js';
 import { assessGatewayContinuation } from './continuity.js';
 import { getActivePage, readStablePageTitle } from '../layer1-bridge/chrome.js';
-
 import { syncPageState } from './state.js';
 import { enterWithStrategy } from './tools.strategy.js';
 import { readFastPath } from './fast-path-router.js';
-
-import { selectEngine } from './engine-selection.js';
-import { decideRoute } from './route-policy.js';
-
+import { selectEngine } from './engine-selection.js';
+import { decideRoute } from './route-policy.js';
 import {
-
   buildGatewayOutcome,
-
   getBatchStatus,
-
   getEffectiveEntryHandoff,
-
   getGatewayContinuation,
-
   getGatewayStatus,
-
   getRouteForState,
-
   projectPageContent,
-
   rememberGatewayTask,
-
   resolvedDirectEntry,
-
   toGatewayPage,
-
 } from './tools.gateway.helpers.js';
-
 import { auditRouteDecision, readLatestRouteDecision } from './audit.js';
 import { textResponse } from './responses.js';
 import { ROUTE_BLOCKED } from './error-codes.js';
@@ -46,6 +30,7 @@ import {
   buildExplainShareCard as defaultBuildExplainShareCard,
   buildFallbackExplainShareCard as defaultBuildFallbackExplainShareCard,
 } from './explain-share-card.js';
+import { buildVerificationEnvelope } from './task-contract.js';
 import { clearHandoff as defaultClearHandoff } from '../grasp/handoff/events.js';
 import { writeHandoffState as defaultWriteHandoffState } from '../grasp/handoff/persist.js';
 import {
@@ -62,6 +47,203 @@ function buildSafeExplainShareCard(buildExplainShareCard, buildFallbackExplainSh
     .resolve()
     .then(() => buildExplainShareCard(page, projection, options))
     .catch(() => buildFallbackExplainShareCard(projection, options));
+}
+
+function buildBatchRecordRoute({ status = 'unknown', route = null, missingFields = [] } = {}) {
+  const missingCount = Array.isArray(missingFields) ? missingFields.length : 0;
+  let nextStep = route?.next_step ?? 'inspect';
+
+  if (status === 'blocked_for_handoff') nextStep = 'request_handoff';
+  if (status === 'ready_to_resume') nextStep = 'resume_after_handoff';
+
+  let failureType = 'none';
+  let errorCode = null;
+  if (status === 'blocked_for_handoff') {
+    failureType = 'route_blocked';
+    errorCode = ROUTE_BLOCKED;
+  } else if (status === 'ready_to_resume') {
+    failureType = 'resume_required';
+    errorCode = 'RESUME_REQUIRED';
+  } else if (status === 'ready' && missingCount > 0) {
+    failureType = 'partial_extraction';
+    errorCode = 'PARTIAL_EXTRACTION';
+  }
+
+  return {
+    selected_mode: route?.selected_mode ?? 'unknown',
+    next_step: nextStep,
+    requires_human: status === 'blocked_for_handoff' ? true : route?.requires_human === true,
+    failure_type: failureType,
+    error_code: errorCode,
+  };
+}
+
+function buildBatchRecordTask({ status = 'unknown', route = null, missingFields = [] } = {}) {
+  const missingCount = Array.isArray(missingFields) ? missingFields.length : 0;
+  const missingSummary = missingCount > 0
+    ? `Missing fields: ${missingFields.join(', ')}`
+    : null;
+
+  if (status === 'blocked_for_handoff') {
+    return {
+      status: 'blocked_for_handoff',
+      reason: 'A checkpoint or gated page blocked direct extraction for this URL.',
+      next_step: 'request_handoff',
+      next_step_human: 'request_handoff',
+      can_continue: false,
+    };
+  }
+
+  if (status === 'ready_to_resume') {
+    return {
+      status: 'ready_to_resume',
+      reason: 'The URL is waiting for resume verification before extraction can continue.',
+      next_step: 'resume_after_handoff',
+      next_step_human: 'resume_after_handoff',
+      can_continue: false,
+    };
+  }
+
+  if (status === 'ready' && missingCount === 0) {
+    const nextStep = route?.next_step ?? 'extract';
+    const warmup = nextStep === 'preheat_session';
+    return {
+      status: warmup ? 'warmup' : 'ready',
+      reason: warmup
+        ? 'Session trust needs warmup before continuing this URL.'
+        : 'Structured extraction is complete for this URL.',
+      next_step: nextStep,
+      next_step_human: nextStep,
+      can_continue: !warmup,
+    };
+  }
+
+  if (status === 'ready' && missingCount > 0) {
+    return {
+      status: 'needs_attention',
+      reason: `Structured extraction is partial for this URL. ${missingSummary}`,
+      next_step: 'inspect_or_fill_gaps',
+      next_step_human: 'inspect_or_fill_gaps',
+      can_continue: true,
+    };
+  }
+
+  return {
+    status: 'needs_attention',
+    reason: 'The runtime needs a manual inspection before this URL can continue.',
+    next_step: 'inspect_manually',
+    next_step_human: 'inspect_manually',
+    can_continue: false,
+  };
+}
+
+function buildBatchRecordVerification({ status = 'unknown', missingFields = [] } = {}) {
+  const missing = Array.isArray(missingFields)
+    ? missingFields.map((field) => String(field ?? '').trim()).filter(Boolean)
+    : [];
+
+  if (status === 'blocked_for_handoff') {
+    return {
+      status: 'blocked',
+      summary: 'A checkpoint or handoff gate blocked extraction for this URL.',
+      missing_evidence: ['handoff required before extraction can continue'],
+    };
+  }
+
+  if (status === 'ready_to_resume') {
+    return {
+      status: 'partial',
+      summary: 'Resume verification is still required for this URL.',
+      missing_evidence: ['resume_after_handoff required'],
+    };
+  }
+
+  if (status === 'ready' && missing.length > 0) {
+    return {
+      status: 'partial',
+      summary: `Structured extraction is partial for this URL (${missing.length} missing).`,
+      missing_evidence: missing,
+    };
+  }
+
+  if (status === 'ready') {
+    return {
+      status: 'verified',
+      summary: 'Structured extraction captured all requested fields for this URL.',
+      missing_evidence: [],
+    };
+  }
+
+  return {
+    status: 'unknown',
+    summary: 'The runtime did not produce a stable extraction result for this URL.',
+    missing_evidence: ['inspect_manually'],
+  };
+}
+
+function buildBatchSummary(records = []) {
+  const statusCounts = {};
+  let completeCount = 0;
+  let incompleteCount = 0;
+  let blockedCount = 0;
+
+  for (const record of records) {
+    const status = record?.status ?? 'unknown';
+    statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+
+    const missingCount = Array.isArray(record?.missing_fields) ? record.missing_fields.length : 0;
+    if (status === 'ready' && missingCount === 0) {
+      completeCount += 1;
+    } else if (status === 'ready' && missingCount > 0) {
+      incompleteCount += 1;
+    } else {
+      blockedCount += 1;
+    }
+  }
+
+  return {
+    total: records.length,
+    status_counts: statusCounts,
+    complete_count: completeCount,
+    incomplete_count: incompleteCount,
+    blocked_count: blockedCount,
+  };
+}
+
+function buildBatchRecoveryPlan(records = []) {
+  const plan = {
+    continue_now: [],
+    inspect_or_fill_gaps: [],
+    request_handoff: [],
+    resume_after_handoff: [],
+    preheat_session: [],
+    inspect_manually: [],
+  };
+
+  for (const record of records) {
+    const targetUrl = record?.final_url ?? record?.input_url ?? null;
+    if (!targetUrl) continue;
+
+    const missingCount = Array.isArray(record?.missing_fields) ? record.missing_fields.length : 0;
+    if (record?.status === 'ready' && missingCount === 0) {
+      plan.continue_now.push(targetUrl);
+    } else if (record?.status === 'ready' && missingCount > 0) {
+      plan.inspect_or_fill_gaps.push(targetUrl);
+    }
+
+    const nextStep = record?.task?.next_step ?? null;
+    if (nextStep === 'request_handoff') {
+      plan.request_handoff.push(targetUrl);
+    } else if (nextStep === 'resume_after_handoff') {
+      plan.resume_after_handoff.push(targetUrl);
+    } else if (nextStep === 'preheat_session') {
+      plan.preheat_session.push(targetUrl);
+    } else if (nextStep === 'inspect_manually') {
+      plan.inspect_manually.push(targetUrl);
+    }
+  }
+
+  return plan;
 }
 
 export function registerGatewayTools(server, state, deps = {}) {
@@ -126,19 +308,62 @@ export function registerGatewayTools(server, state, deps = {}) {
       state.lastRouteTrace = routeTrace;
       await auditRoute(routeTrace);
 
-      const response = buildGatewayResponse({
-        status: gatewayOutcome.status,
-        page: toGatewayPage(outcome, state, { preferCurrentUrl }),
-        continuation: {
-          can_continue: gatewayOutcome.canContinue,
-          suggested_next_action: gatewayOutcome.suggestedNextAction,
-          handoff_state: effectiveHandoff?.state ?? state.handoff?.state ?? 'idle',
-        },
-        evidence: { strategy: outcome.preflight ?? null },
-        runtime: instance ? { instance } : {},
-        route: routeTrace,
-        ...(routeTrace.error_code ? { error_code: routeTrace.error_code } : {}),
+      const verification = buildVerificationEnvelope({
+
+        status: gatewayOutcome.canContinue
+
+          ? 'verified'
+
+          : gatewayOutcome.status === 'blocked_for_handoff'
+
+            ? 'blocked'
+
+            : 'partial',
+
+        summary: gatewayOutcome.canContinue
+
+          ? 'The runtime selected a route and has enough context to continue.'
+
+          : gatewayOutcome.status === 'blocked_for_handoff'
+
+            ? 'The runtime selected a route, but the page requires handoff or recovery before continuing.'
+
+            : 'The runtime selected a route, but more evidence is needed before continuing.',
+
+        evidence: [routeTrace.selected_mode ? `route selected: ${routeTrace.selected_mode}` : null].filter(Boolean),
+
+        missingEvidence: gatewayOutcome.canContinue ? [] : ['continuation not ready'],
+
       });
+
+      const response = buildGatewayResponse({
+
+        status: gatewayOutcome.status,
+
+        page: toGatewayPage(outcome, state, { preferCurrentUrl }),
+
+        continuation: {
+
+          can_continue: gatewayOutcome.canContinue,
+
+          suggested_next_action: gatewayOutcome.suggestedNextAction,
+
+          handoff_state: effectiveHandoff?.state ?? state.handoff?.state ?? 'idle',
+
+        },
+
+        evidence: { strategy: outcome.preflight ?? null },
+
+        runtime: instance ? { instance } : {},
+
+        route: routeTrace,
+
+        verification,
+
+        ...(routeTrace.error_code ? { error_code: routeTrace.error_code } : {}),
+
+      });
+
       rememberGatewayTask(state, {
         tool: 'entry',
         status: response.meta?.status ?? gatewayOutcome.status,
@@ -162,17 +387,48 @@ export function registerGatewayTools(server, state, deps = {}) {
       const instance = await getBrowserInstance();
       const route = getRouteForState({ url: page.url(), state });
 
-      const response = buildGatewayResponse({
-        status: getGatewayStatus(state),
-        page: toGatewayPage({
-          title: await readStablePageTitle(page),
-          url: page.url(),
-          pageState: state.pageState,
-        }, state),
-        continuation: getGatewayContinuation(state, 'extract'),
-        runtime: instance ? { instance } : {},
-        route,
+      const continuation = getGatewayContinuation(state, 'extract');
+
+      const verification = buildVerificationEnvelope({
+
+        status: continuation.can_continue ? 'verified' : 'blocked',
+
+        summary: continuation.can_continue
+
+          ? 'The runtime has a readable current state and a clear next step.'
+
+          : 'The current page state is blocked and needs handoff or recovery before continuing.',
+
+        evidence: [state.pageState?.currentRole ? `page role: ${state.pageState.currentRole}` : null].filter(Boolean),
+
+        missingEvidence: continuation.can_continue ? [] : ['direct continuation unavailable'],
+
       });
+
+      const response = buildGatewayResponse({
+
+        status: getGatewayStatus(state),
+
+        page: toGatewayPage({
+
+          title: await readStablePageTitle(page),
+
+          url: page.url(),
+
+          pageState: state.pageState,
+
+        }, state),
+
+        continuation,
+
+        runtime: instance ? { instance } : {},
+
+        route,
+
+        verification,
+
+      });
+
       rememberGatewayTask(state, {
         tool: 'inspect',
         status: response.meta?.status ?? getGatewayStatus(state),
@@ -211,18 +467,48 @@ export function registerGatewayTools(server, state, deps = {}) {
         },
       });
 
-      const response = buildGatewayResponse({
-        status: getGatewayStatus(state),
-        page: toGatewayPage({
-          title: result.title ?? await readStablePageTitle(page),
-          url: result.url ?? page.url(),
-          pageState: state.pageState,
-        }, state),
-        result,
-        continuation: getGatewayContinuation(state, 'inspect'),
-        runtime: instance ? { instance } : {},
-        route,
+      const verification = buildVerificationEnvelope({
+
+        status: result?.main_text ? 'verified' : 'partial',
+
+        summary: result?.main_text
+
+          ? 'Page extraction produced readable content for the current route.'
+
+          : 'Page extraction ran, but the readable content is still sparse.',
+
+        evidence: [result?.summary ? `summary captured: ${result.summary}` : null].filter(Boolean),
+
+        missingEvidence: result?.main_text ? [] : ['main readable content missing'],
+
       });
+
+      const response = buildGatewayResponse({
+
+        status: getGatewayStatus(state),
+
+        page: toGatewayPage({
+
+          title: result.title ?? await readStablePageTitle(page),
+
+          url: result.url ?? page.url(),
+
+          pageState: state.pageState,
+
+        }, state),
+
+        result,
+
+        continuation: getGatewayContinuation(state, 'inspect'),
+
+        runtime: instance ? { instance } : {},
+
+        route,
+
+        verification,
+
+      });
+
       rememberGatewayTask(state, {
         tool: 'extract',
         status: response.meta?.status ?? getGatewayStatus(state),
@@ -272,22 +558,56 @@ export function registerGatewayTools(server, state, deps = {}) {
         ...(projection.markdown !== undefined ? { markdown: projection.markdown } : {}),
       };
 
-      const response = buildGatewayResponse({
-        status: getGatewayStatus(state),
-        page: toGatewayPage({
-          title: projection.title,
-          url: projection.url,
-          pageState: state.pageState,
-        }, state),
-        result: {
-          ...projection,
-          structured,
-          exports,
-        },
-        continuation: getGatewayContinuation(state, 'inspect'),
-        runtime: instance ? { instance } : {},
-        route,
+      const verification = buildVerificationEnvelope({
+
+        status: structured.missing_fields?.length ? 'partial' : 'verified',
+
+        summary: structured.missing_fields?.length
+
+          ? 'Structured extraction completed, but some requested fields are still missing.'
+
+          : 'Structured extraction completed with evidence for all requested fields.',
+
+        evidence: (structured.evidence ?? []).map((item) => `${item.field} ← ${item.label}`),
+
+        missingEvidence: structured.missing_fields ?? [],
+
       });
+
+      const response = buildGatewayResponse({
+
+        status: getGatewayStatus(state),
+
+        page: toGatewayPage({
+
+          title: projection.title,
+
+          url: projection.url,
+
+          pageState: state.pageState,
+
+        }, state),
+
+        result: {
+
+          ...projection,
+
+          structured,
+
+          exports,
+
+        },
+
+        continuation: getGatewayContinuation(state, 'inspect'),
+
+        runtime: instance ? { instance } : {},
+
+        route,
+
+        verification,
+
+      });
+
       rememberGatewayTask(state, {
         tool: 'extract_structured',
         status: response.meta?.status ?? getGatewayStatus(state),
@@ -328,15 +648,43 @@ export function registerGatewayTools(server, state, deps = {}) {
         }
 
         const status = getGatewayStatus(state);
-        if (!page || status !== 'direct') {
+        const routeUrl = outcome.final_url ?? outcome.url ?? inputUrl;
+        const routeDecision = decideRoute({
+          url: routeUrl,
+          intent: 'extract',
+          selection: selectEngine({ tool: 'extract', url: routeUrl }),
+          preflight: outcome.preflight,
+          pageState: outcome.pageState ?? state.pageState,
+          handoff: outcome.handoff ?? state.handoff,
+        });
+
+        if (!page || status !== 'ready') {
+          const missingFields = [...fields];
+          const routeContract = buildBatchRecordRoute({
+            status,
+            route: routeDecision,
+            missingFields,
+          });
+          const task = buildBatchRecordTask({
+            status,
+            route: routeContract,
+            missingFields,
+          });
+          const verification = buildBatchRecordVerification({
+            status,
+            missingFields,
+          });
+
           records.push({
             input_url: inputUrl,
             final_url: outcome.final_url ?? outcome.url ?? inputUrl,
             status,
             title: outcome.title ?? 'unknown',
             record: {},
-            missing_fields: [...fields],
-            route: outcome.preflight?.recommended_entry_strategy ?? 'unknown',
+            missing_fields: missingFields,
+            route: routeContract,
+            task,
+            verification,
           });
           continue;
         }
@@ -356,18 +704,40 @@ export function registerGatewayTools(server, state, deps = {}) {
           },
         });
         const structured = await extractStructured(page, fields);
+        const missingFields = Array.isArray(structured.missing_fields)
+          ? structured.missing_fields
+          : [];
+        const routeContract = buildBatchRecordRoute({
+          status,
+          route: routeDecision,
+          missingFields,
+        });
+        const task = buildBatchRecordTask({
+          status,
+          route: routeContract,
+          missingFields,
+        });
+        const verification = buildBatchRecordVerification({
+          status,
+          missingFields,
+        });
 
         records.push({
           input_url: inputUrl,
           final_url: projection.url,
           status,
           title: projection.title,
-          record: structured.record,
-          missing_fields: structured.missing_fields,
+          record: structured.record ?? {},
+          missing_fields: missingFields,
           evidence: structured.evidence,
+          route: routeContract,
+          task,
+          verification,
         });
       }
 
+      const batchSummary = buildBatchSummary(records);
+      const recoveryPlan = buildBatchRecoveryPlan(records);
       const columns = ['input_url', 'final_url', 'status', 'title', ...fields];
       const csvRows = records.map((record) => ({
         input_url: record.input_url,
@@ -380,6 +750,8 @@ export function registerGatewayTools(server, state, deps = {}) {
       const json = JSON.stringify({
         fields,
         records,
+        batch_summary: batchSummary,
+        recovery_plan: recoveryPlan,
       }, null, 2);
       const artifacts = {
         csv: await writeArtifact({
@@ -409,31 +781,113 @@ export function registerGatewayTools(server, state, deps = {}) {
       const batchStatus = getBatchStatus(records);
       const route = getRouteForState({ url: page.url(), state, intent: 'extract' });
 
-      const response = buildGatewayResponse({
-        status: batchStatus,
-        page: toGatewayPage({
-          title: await readStablePageTitle(page),
-          url: page.url(),
-          pageState: state.pageState,
-        }, state),
-        result: {
-          fields,
-          records,
-          artifacts,
-        },
-        continuation: getGatewayContinuation(state, 'inspect'),
-        runtime: instance ? { instance } : {},
-        route,
-        message: [
-          `Status: ${batchStatus}`,
-          `Visited URLs: ${urls.length}`,
-          `Structured records: ${records.length}`,
-          `CSV artifact: ${artifacts.csv.path}`,
-          `JSON artifact: ${artifacts.json.path}`,
-          ...(artifacts.markdown ? [`Markdown artifact: ${artifacts.markdown.path}`] : []),
-          `Next: inspect`,
+      const fullyVerifiedCount = batchSummary.complete_count;
+      const incompleteCount = batchSummary.incomplete_count;
+      const blockedCount = batchSummary.blocked_count;
+      const blockedOrIncompleteCount = blockedCount + incompleteCount;
+      const verificationStatus = batchStatus === 'mixed'
+        ? 'partial'
+        : batchStatus === 'blocked_for_handoff'
+          ? 'blocked'
+          : incompleteCount > 0
+            ? 'partial'
+          : 'verified';
+
+      const verification = buildVerificationEnvelope({
+
+        status: verificationStatus,
+
+        summary: blockedOrIncompleteCount > 0
+
+          ? `Batch extraction completed with ${blockedCount} blocked and ${incompleteCount} incomplete URL(s).`
+
+          : 'Batch extraction completed for all URLs with structured output ready.',
+
+        evidence: [
+
+          `verified records: ${fullyVerifiedCount}/${records.length}`,
+
+          `incomplete records: ${incompleteCount}/${records.length}`,
+
+          `blocked records: ${blockedCount}/${records.length}`,
+
+          `csv artifact: ${artifacts.csv.path}`,
+
+          `json artifact: ${artifacts.json.path}`,
+
+          ...(artifacts.markdown ? [`markdown artifact: ${artifacts.markdown.path}`] : []),
+
         ],
+
+        missingEvidence: [
+          ...(blockedCount > 0 ? [`blocked records: ${blockedCount}`] : []),
+          ...(incompleteCount > 0 ? [`incomplete records: ${incompleteCount}`] : []),
+        ],
+
       });
+
+      const response = buildGatewayResponse({
+
+        status: batchStatus,
+
+        page: toGatewayPage({
+
+          title: await readStablePageTitle(page),
+
+          url: page.url(),
+
+          pageState: state.pageState,
+
+        }, state),
+
+        result: {
+
+          fields,
+
+          records,
+
+          batch_summary: batchSummary,
+
+          recovery_plan: recoveryPlan,
+
+          artifacts,
+
+        },
+
+        continuation: getGatewayContinuation(state, 'inspect'),
+
+        runtime: instance ? { instance } : {},
+
+        route,
+
+        verification,
+
+        message: [
+
+          `Status: ${batchStatus}`,
+
+          `Visited URLs: ${urls.length}`,
+
+          `Structured records: ${records.length}`,
+
+          `Complete: ${batchSummary.complete_count}`,
+
+          `Incomplete: ${batchSummary.incomplete_count}`,
+
+          `Blocked: ${batchSummary.blocked_count}`,
+
+          `CSV artifact: ${artifacts.csv.path}`,
+
+          `JSON artifact: ${artifacts.json.path}`,
+
+          ...(artifacts.markdown ? [`Markdown artifact: ${artifacts.markdown.path}`] : []),
+
+          `Next: inspect`,
+
+        ],
+
+      });
+
       rememberGatewayTask(state, {
         tool: 'extract_batch',
         status: batchStatus,
@@ -496,25 +950,62 @@ export function registerGatewayTools(server, state, deps = {}) {
         });
       }
 
-      const response = buildGatewayResponse({
-        status: getGatewayStatus(state),
-        page: toGatewayPage({
-          title: projection.title,
-          url: projection.url,
-          pageState: state.pageState,
-        }, state),
-        result: {
-          projection,
-          explain_card: explainCard,
-          artifact: {
-            format,
-            ...artifactMeta,
-          },
-        },
-        continuation: getGatewayContinuation(state, 'inspect'),
-        runtime: instance ? { instance } : {},
-        route,
+      const verification = buildVerificationEnvelope({
+
+        status: artifactMeta?.path ? 'verified' : 'failed',
+
+        summary: artifactMeta?.path
+
+          ? 'A shareable artifact was written for the current page.'
+
+          : 'The share artifact could not be written.',
+
+        evidence: artifactMeta?.path ? [`artifact written: ${artifactMeta.path}`] : [],
+
+        missingEvidence: artifactMeta?.path ? [] : ['artifact path unavailable'],
+
       });
+
+      const response = buildGatewayResponse({
+
+        status: getGatewayStatus(state),
+
+        page: toGatewayPage({
+
+          title: projection.title,
+
+          url: projection.url,
+
+          pageState: state.pageState,
+
+        }, state),
+
+        result: {
+
+          projection,
+
+          explain_card: explainCard,
+
+          artifact: {
+
+            format,
+
+            ...artifactMeta,
+
+          },
+
+        },
+
+        continuation: getGatewayContinuation(state, 'inspect'),
+
+        runtime: instance ? { instance } : {},
+
+        route,
+
+        verification,
+
+      });
+
       rememberGatewayTask(state, {
         tool: 'share_page',
         status: response.meta?.status ?? getGatewayStatus(state),
@@ -608,17 +1099,58 @@ export function registerGatewayTools(server, state, deps = {}) {
       const outcome = await assessGatewayContinuation(page, state);
       const route = getRouteForState({ url: page.url(), state });
 
-      const response = buildGatewayResponse({
-        status: outcome.status,
-        page: toGatewayPage({
-          title: await readStablePageTitle(page),
-          url: page.url(),
-          pageState: state.pageState,
-        }, state),
-        continuation: outcome.continuation,
-        runtime: instance ? { instance } : {},
-        route,
+      const verification = buildVerificationEnvelope({
+
+        status: outcome.continuation?.can_continue
+
+          ? 'verified'
+
+          : outcome.status === 'needs_attention'
+
+            ? 'failed'
+
+            : 'blocked',
+
+        summary: outcome.continuation?.can_continue
+
+          ? 'The runtime has enough evidence to continue the task.'
+
+          : outcome.status === 'needs_attention'
+
+            ? 'The runtime does not have enough continuation evidence to proceed safely.'
+
+            : 'The runtime is blocked and needs a handoff or more evidence before continuing.',
+
+        evidence: outcome.continuation?.task_continuation_ok === true ? ['continuation anchors matched'] : [],
+
+        missingEvidence: outcome.continuation?.task_continuation_ok === false ? ['continuation anchors did not match'] : [],
+
       });
+
+      const response = buildGatewayResponse({
+
+        status: outcome.status,
+
+        page: toGatewayPage({
+
+          title: await readStablePageTitle(page),
+
+          url: page.url(),
+
+          pageState: state.pageState,
+
+        }, state),
+
+        continuation: outcome.continuation,
+
+        runtime: instance ? { instance } : {},
+
+        route,
+
+        verification,
+
+      });
+
       rememberGatewayTask(state, {
         tool: 'continue',
         status: response.meta?.status ?? outcome.status,

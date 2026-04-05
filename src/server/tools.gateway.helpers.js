@@ -58,18 +58,32 @@ export function getEffectiveEntryHandoff(outcome = {}) {
 export function getGatewayStatus(state) {
   const pageState = state.pageState ?? {};
   const handoffState = state.handoff?.state ?? 'idle';
-  if (isBlockedHandoffState(handoffState)) {
-    return 'handoff_required';
+
+  if (handoffState === 'awaiting_reacquisition') {
+    return 'ready_to_resume';
+  }
+  if (handoffState === 'handoff_required' || handoffState === 'handoff_in_progress') {
+    return 'blocked_for_handoff';
   }
   if (pageState.riskGateDetected || pageState.currentRole === 'checkpoint') {
-    return 'gated';
+    return 'blocked_for_handoff';
   }
-  return 'direct';
+  return 'ready';
 }
 
 export function getGatewayContinuation(state, suggestedNextAction) {
   const handoffState = state.handoff?.state ?? 'idle';
-  if (getGatewayStatus(state) !== 'direct') {
+  const gatewayStatus = getGatewayStatus(state);
+
+  if (gatewayStatus === 'ready_to_resume') {
+    return {
+      can_continue: false,
+      suggested_next_action: 'resume_after_handoff',
+      handoff_state: handoffState,
+    };
+  }
+
+  if (gatewayStatus !== 'ready') {
     return {
       can_continue: false,
       suggested_next_action: 'request_handoff',
@@ -92,25 +106,34 @@ export function buildGatewayOutcome(outcome) {
 
   if (resolvedDirectEntry(outcome)) {
     return {
-      status: 'direct',
+      status: 'ready',
       canContinue: true,
       suggestedNextAction: getEntryDirectNextAction(pageState),
     };
   }
 
+  if (handoffState === 'awaiting_reacquisition') {
+    return {
+      status: 'ready_to_resume',
+      canContinue: false,
+      suggestedNextAction: 'resume_after_handoff',
+    };
+  }
+
   if (isBlockedHandoffState(handoffState) || isGatedPageState(pageState)) {
     return {
-      status: 'gated',
+      status: 'blocked_for_handoff',
       canContinue: false,
       suggestedNextAction: 'request_handoff',
     };
   }
 
   if (strategy === 'handoff_or_preheat') {
+    const blocked = pageState.riskGateDetected === true || pageState.currentRole === 'checkpoint';
     return {
-      status: 'gated',
-      canContinue: false,
-      suggestedNextAction: outcome.pageState?.riskGateDetected ? 'request_handoff' : 'preheat_session',
+      status: blocked ? 'blocked_for_handoff' : 'warmup',
+      canContinue: !blocked,
+      suggestedNextAction: blocked ? 'request_handoff' : 'preheat_session',
     };
   }
 
@@ -123,8 +146,8 @@ export function buildGatewayOutcome(outcome) {
   }
 
   return {
-    status: 'direct',
-    canContinue: true,
+    status: 'needs_attention',
+    canContinue: false,
     suggestedNextAction: 'inspect',
   };
 }
@@ -204,11 +227,11 @@ export async function projectPageContent({
 }
 
 export function getBatchStatus(records = []) {
-  if (records.length === 0) return 'direct';
-  const directCount = records.filter((record) => record.status === 'direct').length;
-  if (directCount === records.length) return 'direct';
-  if (directCount > 0) return 'mixed';
-  return 'handoff_required';
+  if (records.length === 0) return 'ready';
+  const readyCount = records.filter((record) => record.status === 'ready').length;
+  if (readyCount === records.length) return 'ready';
+  if (readyCount > 0) return 'mixed';
+  return 'blocked_for_handoff';
 }
 
 export function rememberGatewayTask(state, {
