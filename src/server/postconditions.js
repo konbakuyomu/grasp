@@ -112,6 +112,46 @@ export async function verifyGenericAction({ page, hintId, prevDomRevision, prevU
     };
   }
 
+  // No immediate change detected. Wait briefly for async DOM updates
+  // (e.g., XHR-loaded content, JS-driven UI transitions) then re-check.
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  } catch {}
+
+  const retryUrl = page.url();
+  const retryUrlChanged = prevUrl != null && retryUrl !== prevUrl;
+
+  let retrySnapshot;
+  let retryEvaluateError = null;
+  try {
+    retrySnapshot = await page.evaluate((targetId) => {
+      const el = targetId ? document.querySelector(`[data-grasp-id="${targetId}"]`) : null;
+      const activeId = document.activeElement?.getAttribute('data-grasp-id') ?? null;
+      const bodyLen = document.body?.innerText?.length ?? 0;
+      return { elementVisible: !!el, activeId, bodyLen };
+    }, hintId);
+  } catch (error) {
+    retryEvaluateError = error;
+    retrySnapshot = { elementVisible: false, activeId: null, bodyLen: 0 };
+  }
+
+  const retryActiveChanged = retrySnapshot.activeId !== prevActiveId;
+  const contextDestroyed = retryEvaluateError && isExecutionContextDestroyed(retryEvaluateError);
+
+  if (retryUrlChanged || retryActiveChanged || contextDestroyed) {
+    return {
+      ok: true,
+      evidence: {
+        ...baseEvidence,
+        url: retryUrl,
+        elementVisible: retrySnapshot.elementVisible,
+        activeId: retrySnapshot.activeId,
+        navigationObserved: retryUrlChanged || contextDestroyed,
+        settled: true,
+      },
+    };
+  }
+
   return {
     ok: false,
     error_code: ACTION_NOT_VERIFIED,
@@ -119,10 +159,10 @@ export async function verifyGenericAction({ page, hintId, prevDomRevision, prevU
     suggested_next_step: 'reverify',
     evidence: {
       ...baseEvidence,
-      elementVisible: snapshot.elementVisible,
-      activeId: snapshot.activeId,
+      elementVisible: retrySnapshot.elementVisible,
+      activeId: retrySnapshot.activeId,
       navigationObserved,
-      error: evaluateError?.message ?? null,
+      error: (evaluateError ?? retryEvaluateError)?.message ?? null,
     },
   };
 }
