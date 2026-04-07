@@ -14,7 +14,18 @@ export async function capturePageSnapshot(page, { attempts = 3, delayMs = 120 } 
     try {
       return await page.evaluate(() => {
         const bodyText = document.body?.innerText?.replace(/\s+/g, ' ').trim().slice(0, 1200) ?? '';
-        const nodes = document.querySelectorAll('button,a,input,textarea,select,[role],[contenteditable]').length;
+        const nodes = document.querySelectorAll('button,a,input,textarea,select,[role],[contenteditable]').length;
+        // Count only truly visible interactive elements — detects CSS show/hide.
+        // Must match hints.js visibility logic: check bounding box AND computed style,
+        // because visibility:hidden keeps layout (positive rect) but hides visually.
+        const visibleNodes = Array.from(
+          document.querySelectorAll('button,a,input,textarea,select,[role],[contenteditable]')
+        ).filter((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) return false;
+          const s = window.getComputedStyle(el);
+          return s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0';
+        }).length;
         const forms = document.querySelectorAll('form,input,textarea,select').length;
         const navs = document.querySelectorAll('nav,header,[role="navigation"],aside a').length;
         const headings = Array.from(document.querySelectorAll('h1,h2,h3')).map((el) => el.textContent?.trim()).filter(Boolean).slice(0, 8);
@@ -28,7 +39,7 @@ export async function capturePageSnapshot(page, { attempts = 3, delayMs = 120 } 
           })
           .join('|');
         const styleFingerprint = visibilityFingerprint;
-        return { bodyText, nodes, forms, navs, headings, title, styleFingerprint };
+        return { bodyText, nodes, visibleNodes, forms, navs, headings, title, styleFingerprint };
       });
     } catch (error) {
       lastError = error;

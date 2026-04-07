@@ -70,7 +70,7 @@ export async function syncPageState(page, state, { force = false, probeImpl = pr
 
   const url = page.url();
   const snapshotData = await capturePageSnapshot(page);
-  const snapshotHash = `${url}|${snapshotData.nodes}|${snapshotData.bodyText}|${snapshotData.styleFingerprint ?? ''}`;
+  const snapshotHash = `${url}|${snapshotData.nodes}|${snapshotData.visibleNodes ?? ''}|${snapshotData.bodyText}|${snapshotData.styleFingerprint ?? ''}`;
 
   const prevPageState = state.pageState ?? createPageGraspState();
   const nextPageState = applySnapshotToPageGraspState(prevPageState, {
