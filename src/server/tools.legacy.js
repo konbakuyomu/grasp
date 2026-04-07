@@ -429,14 +429,25 @@ export function registerTools(server, state) {
             await syncPageState(page, state, { force: true });
             return result;
           },
-          verify: async () => verifyGenericAction({
-            page,
-            hintId: normalizedHintId,
-            prevDomRevision,
-            prevUrl,
-            prevActiveId,
-            newDomRevision: state.pageState.domRevision,
-          }),
+          verify: async () => {
+            // Attempt 1: immediate (fast path for synchronous DOM changes)
+            try { await syncPageState(page, state, { force: true }); } catch {}
+
+            // Attempt 2: if domRevision hasn't changed yet, wait for deferred rendering
+            if ((state.pageState?.domRevision ?? 0) === prevDomRevision) {
+              await new Promise((resolve) => setTimeout(resolve, 600));
+              try { await syncPageState(page, state, { force: true }); } catch {}
+            }
+
+            return verifyGenericAction({
+              page,
+              hintId: normalizedHintId,
+              prevDomRevision,
+              prevUrl,
+              prevActiveId,
+              newDomRevision: state.pageState.domRevision,
+            });
+          },
           onFailure: async (failure) => {
             await audit('click_failed', `[${normalizedHintId}] ${failure.error_code}`);
             return buildStructuredError(

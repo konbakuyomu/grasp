@@ -7,6 +7,7 @@ import { capturePageSnapshot } from '../grasp/page/capture.js';
 const TRANSIENT_CONTEXT_ERRORS = [
   'Execution context was destroyed',
   'Cannot find context with specified id',
+  'parameter 1 is not of type \'Node\'',
 ];
 
 function isTransientExecutionContextError(error) {
@@ -70,7 +71,7 @@ export async function syncPageState(page, state, { force = false, probeImpl = pr
 
   const url = page.url();
   const snapshotData = await capturePageSnapshot(page);
-  const snapshotHash = `${url}|${snapshotData.nodes}|${snapshotData.bodyText}|${snapshotData.styleFingerprint ?? ''}`;
+  const snapshotHash = `${url}|${snapshotData.nodes}|${snapshotData.visibleNodes ?? ''}|${snapshotData.bodyText}|${snapshotData.styleFingerprint ?? ''}`;
 
   const prevPageState = state.pageState ?? createPageGraspState();
   const nextPageState = applySnapshotToPageGraspState(prevPageState, {
