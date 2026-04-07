@@ -7,6 +7,7 @@ import { capturePageSnapshot } from '../grasp/page/capture.js';
 const TRANSIENT_CONTEXT_ERRORS = [
   'Execution context was destroyed',
   'Cannot find context with specified id',
+  'parameter 1 is not of type \'Node\'',
 ];
 
 function isTransientExecutionContextError(error) {
