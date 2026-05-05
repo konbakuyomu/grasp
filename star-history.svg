@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-labelledby="title desc">
   <title id="title">konbakuyomu/grasp star history</title>
-  <desc id="desc">Cumulative GitHub stars for konbakuyomu/grasp from 2026-05-04 to 2026-05-04.</desc>
+  <desc id="desc">Cumulative GitHub stars for konbakuyomu/grasp from 2026-05-05 to 2026-05-05.</desc>
   <defs>
     <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.28" />
@@ -19,7 +19,7 @@
   <text x="76" y="42" font-size="26" font-weight="700" fill="#0F172A">Star History</text>
   <text x="76" y="64" font-size="13" fill="#48617D">konbakuyomu/grasp</text>
   <text x="926" y="42" text-anchor="end" font-size="24" font-weight="700" fill="#0F172A">0</text>
-  <text x="926" y="64" text-anchor="end" font-size="13" fill="#48617D">Updated 2026-05-04 UTC</text>
+  <text x="926" y="64" text-anchor="end" font-size="13" fill="#48617D">Updated 2026-05-05 UTC</text>
 
   <line x1="76" y1="488" x2="926" y2="488" stroke="#D7E3F4" stroke-width="1" /><text x="64" y="492" text-anchor="end" font-size="12" fill="#48617D">0</text><line x1="76" y1="76" x2="926" y2="76" stroke="#D7E3F4" stroke-width="1" /><text x="64" y="80" text-anchor="end" font-size="12" fill="#48617D">1</text>
   <line x1="76" y1="488" x2="926" y2="488" stroke="#94AFCB" stroke-width="1.5" />
